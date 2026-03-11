@@ -20,8 +20,8 @@ const app = express();
 // ── Security & Middleware ──────────────────────────────────────────────────────
 app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
 app.use(cors({
-  origin: process.env.CLIENT_URL || "http://localhost:3000",
-  credentials: true,
+  origin: "*",
+  credentials: false,
 }));
 app.use(morgan("dev"));
 app.use(express.json({ limit: "10mb" }));
@@ -29,12 +29,12 @@ app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
 // ── Rate Limiting ─────────────────────────────────────────────────────────────
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
+  windowMs: 15 * 60 * 1000,
   max: 100,
   message: { error: "Too many requests. Please try again later." },
 });
 const aiLimiter = rateLimit({
-  windowMs: 60 * 1000, // 1 minute
+  windowMs: 60 * 1000,
   max: 10,
   message: { error: "AI request limit reached. Please wait a moment." },
 });
