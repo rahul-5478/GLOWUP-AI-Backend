@@ -14,6 +14,8 @@ const faceRoutes = require("./routes/face");
 const fitnessRoutes = require("./routes/fitness");
 const fashionRoutes = require("./routes/fashion");
 const userRoutes = require("./routes/user");
+const skinRoutes = require("./routes/skin");
+const chatRoutes = require("./routes/chat");
 
 const app = express();
 app.set("trust proxy", 1); // ← Render ke liye zaroori
@@ -39,7 +41,7 @@ app.use("/api/", limiter);
 app.use("/api/face", aiLimiter);
 app.use("/api/fashion", aiLimiter);
 app.use("/api/fitness", aiLimiter);
-
+app.use("/api/skin", aiLimiter); 
 app.use("/api/auth", authRoutes);
 app.use("/api/face", faceRoutes);
 app.use("/api/fitness", fitnessRoutes);
@@ -71,4 +73,3 @@ mongoose.connect(process.env.MONGODB_URI, {
   process.exit(1);
 });
 
-module.exports = app;
