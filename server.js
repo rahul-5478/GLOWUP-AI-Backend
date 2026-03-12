@@ -47,7 +47,8 @@ app.use("/api/face", faceRoutes);
 app.use("/api/fitness", fitnessRoutes);
 app.use("/api/fashion", fashionRoutes);
 app.use("/api/user", userRoutes);
-
+app.use("/api/skin", skinRoutes);   
+app.use("/api/chat", chatRoutes);   
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString(), service: "GlowUp AI API" });
 });
