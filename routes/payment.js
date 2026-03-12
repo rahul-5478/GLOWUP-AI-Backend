@@ -21,7 +21,8 @@ router.post("/create-order", protect, async (req, res) => {
     });
     res.json({ success: true, order, key: process.env.RAZORPAY_KEY_ID });
   } catch (err) {
-    console.error("Payment error:", err.message);
+    console.error("Payment error FULL:", JSON.stringify(err));
+    console.error("ENV KEY:", process.env.RAZORPAY_KEY_ID ? "EXISTS" : "MISSING");
     res.status(500).json({ error: "Could not create payment order." });
   }
 });
