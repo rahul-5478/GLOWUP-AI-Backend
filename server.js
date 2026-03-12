@@ -18,37 +18,40 @@ const skinRoutes = require("./routes/skin");
 const chatRoutes = require("./routes/chat");
 
 const app = express();
-app.set("trust proxy", 1); // ← Render ke liye zaroori
+app.set("trust proxy", 1);
 
 app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
+
+// ✅ CORS fix — all origins allowed (Capacitor Android ke liye)
 app.use(cors({
-  origin: [
-    "http://localhost:3000",
-    "https://glowup-ai.vercel.app",
-    /\.vercel\.app$/,
-    "capacitor://localhost",
-    "http://localhost",
-  ],
+  origin: function(origin, callback) {
+    callback(null, true);
+  },
   credentials: true,
 }));
+
 app.use(morgan("dev"));
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
 const limiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 100, message: { error: "Too many requests." } });
 const aiLimiter = rateLimit({ windowMs: 60 * 1000, max: 10, message: { error: "AI request limit reached." } });
+
 app.use("/api/", limiter);
 app.use("/api/face", aiLimiter);
 app.use("/api/fashion", aiLimiter);
 app.use("/api/fitness", aiLimiter);
-app.use("/api/skin", aiLimiter); 
+app.use("/api/skin", aiLimiter);
+app.use("/api/chat", aiLimiter);
+
 app.use("/api/auth", authRoutes);
 app.use("/api/face", faceRoutes);
 app.use("/api/fitness", fitnessRoutes);
 app.use("/api/fashion", fashionRoutes);
 app.use("/api/user", userRoutes);
-app.use("/api/skin", skinRoutes);   
-app.use("/api/chat", chatRoutes);   
+app.use("/api/skin", skinRoutes);
+app.use("/api/chat", chatRoutes);
+
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString(), service: "GlowUp AI API" });
 });
@@ -74,3 +77,4 @@ mongoose.connect(process.env.MONGODB_URI, {
   process.exit(1);
 });
 
+module.exports = app;
