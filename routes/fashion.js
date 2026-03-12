@@ -6,9 +6,9 @@ const User = require("../models/User");
 
 router.post("/analyze", protect, async (req, res) => {
   try {
-    const { imageBase64, occasion } = req.body;
-    if (!imageBase64 || !occasion)
-      return res.status(400).json({ error: "Image and occasion are required." });
+    const { occasion } = req.body;
+    if (!occasion)
+      return res.status(400).json({ error: "Occasion is required." });
 
     const prompt = `You are GlowUp AI's elite personal stylist for a ${occasion} occasion.
 Return ONLY valid JSON, no extra text:
