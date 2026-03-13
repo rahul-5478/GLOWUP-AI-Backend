@@ -9,53 +9,34 @@ router.post("/analyze", protect, async (req, res) => {
     const { occasion, style, bodyType, budget } = req.body;
     if (!occasion) return res.status(400).json({ error: "Occasion is required." });
 
-    const prompt = `You are GlowUp AI's elite personal stylist.
-Create UNIQUE, CREATIVE outfit recommendations for this specific person:
-- Occasion: ${occasion}
-- Preferred style: ${style || "not specified"}
-- Body type: ${bodyType || "not specified"}
-- Budget: ${budget || "mixed"}
-- Random variation: ${Math.random()}
+    const prompt = `Give UNIQUE outfit recommendations for:
+Occasion: ${occasion}
+Style: ${style || "any"}
+Body type: ${bodyType || "any"}
+Budget: ${budget || "mixed"}
+Timestamp: ${Date.now()}
 
-Give DIFFERENT outfit ideas every time. Consider Indian fashion trends and brands too.
+RULES:
+- Suggest outfits specifically for ${occasion}
+- Include real Indian brands available on Myntra/Ajio
+- Consider Indian weather and culture
+- Be CREATIVE — different suggestions every time
 
-Return ONLY valid JSON:
+Return JSON with EXACTLY these keys:
 {
-  "bodyShape": "rectangle",
-  "bodyShapeDetails": "Athletic build with balanced proportions — very versatile for styling.",
-  "outfitRecommendations": [
-    {
-      "outfit": "Smart Casual",
-      "description": "Navy chinos with white Oxford shirt and white sneakers",
-      "why": "Adds dimension and keeps it relaxed yet put-together",
-      "priceRange": "budget",
-      "indianBrands": ["H&M", "Zara India", "Marks & Spencer"]
-    },
-    {
-      "outfit": "Classic Elegant",
-      "description": "Charcoal blazer over light blue shirt with dark slim jeans",
-      "why": "Creates sharp V-shape silhouette, perfect for ${occasion}",
-      "priceRange": "mid",
-      "indianBrands": ["Mango", "Tommy Hilfiger", "Van Heusen"]
-    },
-    {
-      "outfit": "Premium Style",
-      "description": "Tailored navy suit with white shirt and leather oxford shoes",
-      "why": "Maximizes athletic build for a powerful, confident appearance",
-      "priceRange": "premium",
-      "indianBrands": ["Raymond", "Louis Philippe", "Peter England"]
-    }
-  ],
-  "colorPalette": ["#1B2A4A - Deep Navy", "#F5F0E8 - Ivory White", "#8B6914 - Caramel Brown", "#2C5F2E - Forest Green"],
-  "stylesAvoid": ["Baggy clothing - hides your build", "Too many patterns together"],
-  "accessories": ["Minimalist leather watch", "Simple leather belt", "Small chain necklace"],
+  "bodyShape": (actual body shape),
+  "bodyShapeDetails": (2 sentences specific to their shape),
+  "outfitRecommendations": [3 objects each with "outfit", "description", "why", "priceRange", "indianBrands"],
+  "colorPalette": [4 hex colors with names suited for ${occasion}],
+  "stylesAvoid": [2-3 specific styles to avoid],
+  "accessories": [3-4 specific accessories for ${occasion}],
   "brands": {
-    "budget": ["H&M", "Zara", "Uniqlo", "Myntra brands"],
-    "mid": ["Mango", "Tommy Hilfiger", "Arrow", "Van Heusen"],
-    "premium": ["Raymond", "Hugo Boss", "Ralph Lauren", "Louis Philippe"]
+    "budget": [3 Indian budget brands],
+    "mid": [3 Indian mid-range brands],
+    "premium": [3 Indian premium brands]
   },
-  "styleTip": "Invest in well-fitted basics in neutral colors — they work for every occasion.",
-  "seasonalTip": "For Indian climate, choose breathable fabrics like cotton and linen."
+  "styleTip": (specific tip for ${occasion}),
+  "seasonalTip": (India-specific seasonal tip)
 }`;
 
     const text = await callGroq(prompt, { occasion, style, bodyType, budget, userId: req.user._id });

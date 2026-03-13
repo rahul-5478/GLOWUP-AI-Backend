@@ -9,35 +9,31 @@ router.post("/analyze", protect, async (req, res) => {
     const { imageBase64, skinConcerns, hairType } = req.body;
     if (!imageBase64) return res.status(400).json({ error: "Image required." });
 
-    const prompt = `You are GlowUp AI's expert face analyst and stylist.
-Analyze this person and give UNIQUE, CREATIVE, PERSONALIZED recommendations.
-Random seed: ${Math.random()}
-User concerns: ${skinConcerns || "general"}, Hair type: ${hairType || "unknown"}
+    const prompt = `Analyze this person's face and give UNIQUE personalized recommendations.
+Skin concerns: ${skinConcerns || "none mentioned"}
+Hair type: ${hairType || "unknown"}
+Timestamp: ${Date.now()}
 
-Give DIFFERENT hairstyle and skincare advice each time — be creative!
+Give CREATIVE, VARIED advice. Consider Indian hair types, skin tones, climate.
 
-Return ONLY valid JSON:
+Return JSON with EXACTLY these keys:
 {
-  "faceShape": "oval",
-  "faceShapeDetails": "Your face has balanced proportions making it very versatile for hairstyles.",
-  "skinTone": "medium",
-  "skinToneHex": "#C68642",
-  "jawlineType": "defined",
-  "topHairstyles": [
-    {"name": "Layered Cut", "reason": "Adds movement and volume to your face shape", "maintenance": "Low"},
-    {"name": "Side Part", "reason": "Creates a sharp, professional look", "maintenance": "Medium"},
-    {"name": "Textured Quiff", "reason": "Adds height and modern touch", "maintenance": "Medium"}
-  ],
-  "stylesAvoid": ["Very flat styles - make face look longer", "Too much volume on sides"],
-  "colorRecommendations": ["Dark Brown with caramel highlights", "Natural Black with subtle lowlights"],
+  "faceShape": (one of: oval/round/square/heart/diamond/oblong),
+  "faceShapeDetails": (2 sentences specific to their shape),
+  "skinTone": (fair/wheatish/medium/dusky/deep),
+  "skinToneHex": (actual hex color),
+  "jawlineType": (soft/defined/strong),
+  "topHairstyles": [3 objects with "name", "reason", "maintenance"],
+  "stylesAvoid": [2-3 specific styles to avoid with reasons],
+  "colorRecommendations": [2-3 hair color ideas],
   "skincare": {
-    "type": "combination",
-    "concerns": ["mild acne", "uneven tone"],
-    "morningRoutine": ["Gentle cleanser", "Vitamin C serum", "SPF 50 moisturizer"],
-    "nightRoutine": ["Micellar water", "Retinol serum", "Night cream"]
+    "type": (skin type),
+    "concerns": [actual concerns],
+    "morningRoutine": [4 steps with Indian/affordable products],
+    "nightRoutine": [4 steps]
   },
-  "grooming": ["Trim every 4-6 weeks", "Use light pomade for styling", "Massage scalp daily"],
-  "confidence": 88
+  "grooming": [3-4 specific grooming tips],
+  "confidence": (number between 75-95)
 }`;
 
     const text = await callGroq(prompt, { skinConcerns, hairType, userId: req.user._id });
