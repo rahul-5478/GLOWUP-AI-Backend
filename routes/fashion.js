@@ -6,48 +6,69 @@ const User = require("../models/User");
 
 router.post("/analyze", protect, async (req, res) => {
   try {
-    const { occasion, style, bodyType, budget } = req.body;
-    if (!occasion) return res.status(400).json({ error: "Occasion is required." });
+    const { occasion, imageBase64, mediaType, uploadMode } = req.body;
 
-    const seed = Math.random().toFixed(8);
+    if (!occasion) {
+      return res.status(400).json({ error: "Occasion is required." });
+    }
 
-    const prompt = `Give UNIQUE outfit recommendations. Seed:${seed}
-Occasion: ${occasion}
-Style: ${style || "any"}
-Body type: ${bodyType || "any"}
-Budget: ${budget || "mixed"}
+    const user = await User.findById(req.user._id);
 
-Rules:
-- Specific to ${occasion} occasion
-- Include real Indian brands on Myntra/Ajio
-- Consider Indian weather and culture
-- Return ONLY raw JSON, no markdown
+    let prompt = "";
+    let groqMessages;
 
-{"bodyShape":"rectangle","bodyShapeDetails":"Athletic build with balanced proportions, versatile for styling.","outfitRecommendations":[{"outfit":"Smart Casual","description":"Navy chinos with white Oxford shirt white sneakers","why":"Adds dimension, relaxed yet put-together for ${occasion}","priceRange":"budget","indianBrands":["H&M","Zara India","Marks Spencer"]},{"outfit":"Classic Elegant","description":"Charcoal blazer light blue shirt dark slim jeans","why":"Sharp V-shape silhouette perfect for ${occasion}","priceRange":"mid","indianBrands":["Mango","Tommy Hilfiger","Van Heusen"]},{"outfit":"Premium Style","description":"Tailored navy suit white shirt leather oxford shoes","why":"Powerful confident appearance for ${occasion}","priceRange":"premium","indianBrands":["Raymond","Louis Philippe","Peter England"]}],"colorPalette":["#1B2A4A - Deep Navy","#F5F0E8 - Ivory White","#8B6914 - Caramel Brown","#2C5F2E - Forest Green"],"stylesAvoid":["Baggy clothing hides build","Too many patterns together"],"accessories":["Minimalist leather watch","Simple leather belt","Small chain necklace"],"brands":{"budget":["H&M","Zara","Uniqlo"],"mid":["Mango","Tommy Hilfiger","Arrow"],"premium":["Raymond","Hugo Boss","Louis Philippe"]},"styleTip":"specific tip for ${occasion}","seasonalTip":"India-specific seasonal tip"}
+    if ((uploadMode === "outfit" || uploadMode === "selfie") && imageBase64) {
 
-Replace ALL values with FRESH creative content specific to ${occasion}.`;
+      if (uploadMode === "outfit") {
+        prompt = `You are GlowUp AI fashion stylist. Analyze the outfit in this image for ${occasion} occasion.
 
-    const text = await callGroq(prompt, { occasion, style, bodyType, budget, userId: req.user._id });
-    const result = parseGroqJSON(text);
+Return ONLY valid JSON, no markdown no backticks:
+{"outfitAnalysis":"honest 2-3 sentence review","outfitScore":7,"outfitRecommendations":[{"outfit":"name","description":"how to improve","why":"why for ${occasion}","items":["item1","item2","item3"],"priceRange":"budget"},{"outfit":"name2","description":"desc","why":"why","items":["i1","i2"],"priceRange":"mid"}],"colorPalette":["#E8D5B7 - Warm Beige","#2C3E50 - Navy","#8B4513 - Brown"],"accessories":["Belt","Watch","Shoes"],"brands":["H&M - affordable","Zara - trendy","Mango - premium"],"styleTip":"one actionable tip"}`;
+      } else {
+        prompt = `You are GlowUp AI fashion stylist. Look at this person face shape and skin tone. Recommend perfect ${occasion} style.
 
-    await User.findByIdAndUpdate(req.user._id, {
-      $push: { analyses: { type: "fashion", result } },
-    });
+Return ONLY valid JSON, no markdown no backticks:
+{"faceAnalysis":"face shape and skin tone observed","bodyShape":"Rectangle","bodyShapeDetails":"style tips","outfitRecommendations":[{"outfit":"outfit for their features","description":"why suits them","why":"why for ${occasion}","items":["item1","item2","item3"],"priceRange":"mid"},{"outfit":"second option","description":"desc","why":"why","items":["i1","i2","i3"],"priceRange":"budget"}],"colorPalette":["#F5DEB3 - Wheat","#556B2F - Olive","#800020 - Burgundy"],"accessories":["Earrings","Bag","Footwear"],"brands":["Fabindia - ethnic","Zara - western","W - fusion"],"styleTip":"personalized tip for their features"}`;
+      }
 
-    res.json({ success: true, result });
+      groqMessages = [
+        {
+          role: "user",
+          content: [
+            {
+              type: "image_url",
+              image_url: {
+                url: `data:${mediaType || "image/jpeg"};base64,${imageBase64}`,
+              },
+            },
+            { type: "text", text: prompt },
+          ],
+        },
+      ];
+
+      const raw = await callGroq(groqMessages, {
+        model: "meta-llama/llama-4-scout-17b-16e-instruct",
+        max_tokens: 1200,
+      });
+
+      const result = parseGroqJSON(raw);
+      return res.json({ success: true, result });
+
+    } else {
+      prompt = `You are GlowUp AI fashion stylist. Best outfit for ${occasion} in India.
+
+Return ONLY valid JSON, no markdown no backticks:
+{"bodyShape":"Versatile","bodyShapeDetails":"style tips for ${occasion}","outfitRecommendations":[{"outfit":"Complete outfit","description":"full look description","why":"perfect for ${occasion}","items":["item1","item2","item3","item4"],"priceRange":"budget"},{"outfit":"Second option","description":"desc","why":"why works","items":["i1","i2","i3"],"priceRange":"mid"},{"outfit":"Premium option","description":"desc","why":"premium reason","items":["i1","i2","i3"],"priceRange":"premium"}],"colorPalette":["#C9A96E - Gold","#1B2A4A - Midnight Blue","#8B0000 - Deep Red","#F5F5DC - Cream"],"accessories":["accessory1","accessory2","accessory3"],"brands":["Brand1 - reason","Brand2 - reason","Brand3 - reason"],"styleTip":"powerful tip for ${occasion}"}`;
+
+      groqMessages = [{ role: "user", content: prompt }];
+      const raw = await callGroq(groqMessages, { max_tokens: 1200 });
+      const result = parseGroqJSON(raw);
+      return res.json({ success: true, result });
+    }
+
   } catch (err) {
-    console.error("Fashion analysis error:", err.message);
+    console.error("❌ Fashion error:", err.message);
     res.status(500).json({ error: "Fashion analysis failed. Please try again." });
-  }
-});
-
-router.get("/history", protect, async (req, res) => {
-  try {
-    const user = await User.findById(req.user._id).select("analyses");
-    const history = user.analyses.filter((a) => a.type === "fashion").reverse();
-    res.json({ history });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
   }
 });
 
