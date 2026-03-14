@@ -5,29 +5,36 @@ const { callGroq, parseGroqJSON } = require("../config/groq");
 
 router.post("/analyze", protect, async (req, res) => {
   try {
-    const { imageBase64 } = req.body;
-    if (!imageBase64) return res.status(400).json({ error: "Image required." });
+    const { skinType, skinConcerns, age, gender, lifestyle } = req.body;
 
-    const prompt = `You are GlowUp AI's expert dermatologist. Analyze this person's skin.
-Return ONLY valid JSON:
+    const prompt = `You are GlowUp AI's expert dermatologist for Indian skin.
+Analyze and give personalized skincare recommendations for:
+- Skin Type: ${skinType || "unknown"}
+- Concerns: ${skinConcerns || "general"}
+- Age: ${age || "unknown"}
+- Gender: ${gender || "unknown"}
+- Lifestyle: ${lifestyle || "normal"}
+- Timestamp: ${Date.now()}
+- Random: ${Math.random()}
+
+Give COMPLETELY UNIQUE recommendations. Use Indian brands and products.
+Consider Indian climate, pollution, and lifestyle.
+
+Return JSON with EXACTLY these keys, no example data:
 {
-  "score": 78,
-  "skinType": "oily",
-  "skinTone": "medium",
-  "skinToneHex": "#C68642",
-  "concerns": ["Mild acne on forehead", "Dark circles under eyes", "Slight hyperpigmentation"],
-  "morningRoutine": ["Gentle foaming cleanser", "Vitamin C serum", "Oil-free moisturizer SPF 50", "Lip balm"],
-  "nightRoutine": ["Micellar water to remove makeup", "Retinol serum (2-3x/week)", "Heavy night cream", "Eye cream"],
-  "products": [
-    {"name": "CeraVe Foaming Cleanser", "reason": "Perfect for oily skin", "price": "₹800-1200"},
-    {"name": "Minimalist Niacinamide 10%", "reason": "Reduces pores and acne", "price": "₹599"},
-    {"name": "Neutrogena Hydro Boost", "reason": "Lightweight hydration", "price": "₹1200"}
-  ],
-  "dietTips": ["Reduce dairy intake", "Eat more antioxidants", "Stay hydrated 3L/day"],
-  "lifestyle": ["Change pillowcase weekly", "Never sleep with makeup", "Use clean brushes"]
+  "score": (number between 60-95 based on concerns),
+  "skinType": (detected type),
+  "skinTone": (fair/wheatish/medium/dusky/deep),
+  "skinToneHex": (matching hex color),
+  "concerns": (array of 3 specific real concerns based on input),
+  "morningRoutine": (array of 4 specific steps with Indian affordable products),
+  "nightRoutine": (array of 4 specific steps),
+  "products": (array of 3 objects with name, reason, price in rupees - use real Indian products),
+  "dietTips": (array of 3 specific Indian diet tips for their skin),
+  "lifestyle": (array of 3 specific lifestyle tips)
 }`;
 
-    const text = await callGroq(prompt);
+    const text = await callGroq(prompt, { skinType, skinConcerns, age, gender });
     const result = parseGroqJSON(text);
     res.json({ success: true, result });
   } catch (err) {

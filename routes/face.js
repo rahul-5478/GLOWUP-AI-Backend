@@ -1,27 +1,48 @@
 const express = require("express");
 const router = express.Router();
 const { protect } = require("../middleware/auth");
-const { callGroq, parseGroqJSON } = require("../config/groq");
+const { callAI, parseAIJSON } = require("../config/groq");
 const User = require("../models/User");
 
 router.post("/analyze", protect, async (req, res) => {
   try {
-    const { imageBase64, skinConcerns, hairType, gender } = req.body;
+    const { imageBase64, skinConcerns, hairType, gender, mediaType = "image/jpeg" } = req.body;
     if (!imageBase64) return res.status(400).json({ error: "Image required." });
 
-    const prompt = `You are GlowUp AI's expert face analyst. Give personalized recommendations.
+    const prompt = `Analyze this person's face in the image carefully and give REAL, ACCURATE, PERSONALIZED recommendations.
 Gender: ${gender || "not specified"}
-Skin concerns: ${skinConcerns || "none"}
+Skin concerns mentioned: ${skinConcerns || "none"}
 Hair type: ${hairType || "unknown"}
 Timestamp: ${Date.now()}
 
-Return ONLY this JSON, no markdown, no explanation, start with { end with }:
-{"faceShape":"oval","faceShapeDetails":"Your face has balanced proportions making most hairstyles work well for you.","skinTone":"medium","skinToneHex":"#C68642","jawlineType":"defined","topHairstyles":[{"name":"Layered Cut","reason":"Adds movement and volume","maintenance":"Low"},{"name":"Side Part","reason":"Creates sharp professional look","maintenance":"Medium"},{"name":"Textured Quiff","reason":"Modern trendy style","maintenance":"Medium"}],"stylesAvoid":["Very flat styles","Extremely short sides"],"colorRecommendations":["Dark Brown with highlights","Natural Black"],"skincare":{"type":"combination","concerns":["mild acne","uneven tone"],"morningRoutine":["Gentle foaming cleanser","Niacinamide 10% serum","Oil-free SPF 50 moisturizer","Lip balm"],"nightRoutine":["Micellar water","Gentle cleanser","Retinol serum","Night cream"]},"grooming":["Trim every 4-6 weeks","Use light pomade","Massage scalp daily","Stay hydrated"],"confidence":85}
+Look at the ACTUAL face in the image — detect real face shape, skin tone, hair, etc.
 
-Replace ALL values with real personalized analysis. Vary the response every time.`;
+Return ONLY this JSON, no markdown:
+{
+  "faceShape": "actual shape from image (oval/round/square/heart/diamond/oblong)",
+  "faceShapeDetails": "2 sentences about their specific face shape",
+  "skinTone": "actual tone (fair/wheatish/medium/dusky/deep)",
+  "skinToneHex": "actual hex color matching their skin",
+  "jawlineType": "soft/defined/strong based on image",
+  "topHairstyles": [
+    {"name": "hairstyle name", "reason": "why it suits their face", "maintenance": "Low/Medium/High"},
+    {"name": "hairstyle name", "reason": "why it suits their face", "maintenance": "Low/Medium/High"},
+    {"name": "hairstyle name", "reason": "why it suits their face", "maintenance": "Low/Medium/High"}
+  ],
+  "stylesAvoid": ["style to avoid with reason", "style to avoid with reason"],
+  "colorRecommendations": ["color idea 1", "color idea 2"],
+  "skincare": {
+    "type": "detected skin type",
+    "concerns": ["concern 1", "concern 2"],
+    "morningRoutine": ["step 1 with Indian product", "step 2", "step 3", "step 4"],
+    "nightRoutine": ["step 1", "step 2", "step 3", "step 4"]
+  },
+  "grooming": ["tip 1", "tip 2", "tip 3", "tip 4"],
+  "confidence": 92
+}`;
 
-    const text = await callGroq(prompt, { skinConcerns, hairType, gender, userId: req.user._id });
-    const result = parseGroqJSON(text);
+    const text = await callAI(prompt, { skinConcerns, hairType, gender, userId: req.user._id }, imageBase64, mediaType);
+    const result = parseAIJSON(text);
 
     await User.findByIdAndUpdate(req.user._id, {
       $push: { analyses: { type: "face", result } }

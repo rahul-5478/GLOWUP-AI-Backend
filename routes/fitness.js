@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const { protect } = require("../middleware/auth");
-const { callGroq, parseGroqJSON } = require("../config/groq");
+const { callAI, parseAIJSON } = require("../config/groq");
 const User = require("../models/User");
 
 router.post("/plan", protect, async (req, res) => {
@@ -19,18 +19,34 @@ BMI: ${bmi} (${bmiStatus})
 Timestamp: ${Date.now()}
 
 RULES:
-- Use ONLY Indian foods (poha, upma, paratha, dal, sabzi, roti, khichdi, biryani, idli, dosa etc)
-- Vary every single day - no repeated meals
+- Use ONLY Indian foods — vary every single day, no repetition
 - Workouts specifically for goal: ${goal}
-- Calculate real calories for ${weight}kg ${age}yr person
+- Calculate real calories for this person
 
-Return ONLY this JSON, no markdown, no explanation:
-{"bmi":"${bmi} (${bmiStatus})","dailyCalories":2000,"macros":{"protein":"120g (25%)","carbs":"225g (45%)","fat":"67g (30%)"},"weeklyPlan":[{"day":"Monday","meals":["Breakfast: Poha with peanuts (350 kcal)","Lunch: Dal chawal sabzi (600 kcal)","Dinner: Roti paneer sabzi (500 kcal)","Snack: Banana almonds (200 kcal)"],"workout":"Chest Triceps","workoutDetails":["Push-ups 3x15","Dumbbell press 3x10","Tricep dips 3x12"]},{"day":"Tuesday","meals":["Breakfast: X","Lunch: X","Dinner: X","Snack: X"],"workout":"Back Biceps","workoutDetails":["X","X","X"]},{"day":"Wednesday","meals":["Breakfast: X","Lunch: X","Dinner: X","Snack: X"],"workout":"REST DAY","workoutDetails":["30 min walk","Stretching"]},{"day":"Thursday","meals":["Breakfast: X","Lunch: X","Dinner: X","Snack: X"],"workout":"Legs","workoutDetails":["X","X","X"]},{"day":"Friday","meals":["Breakfast: X","Lunch: X","Dinner: X","Snack: X"],"workout":"Shoulders Abs","workoutDetails":["X","X","X"]},{"day":"Saturday","meals":["Breakfast: X","Lunch: X","Dinner: X","Snack: X"],"workout":"Cardio","workoutDetails":["X","X","X"]},{"day":"Sunday","meals":["Breakfast: X","Lunch: X","Dinner: X","Snack: X"],"workout":"REST DAY","workoutDetails":["Yoga 30 mins","Meditation"]}],"topTips":["tip1 for ${goal}","tip2","tip3"],"estimatedTimeline":"realistic for ${goal}","waterIntake":"${Math.round(weight * 0.033)} liters per day","sleepRecommendation":"7-8 hours per night"}
+Return ONLY this JSON:
+{
+  "bmi": "${bmi} (${bmiStatus})",
+  "dailyCalories": 2000,
+  "macros": {"protein": "120g (25%)", "carbs": "225g (45%)", "fat": "67g (30%)"},
+  "weeklyPlan": [
+    {"day": "Monday", "meals": ["Breakfast: Poha with peanuts (350 kcal)", "Lunch: Dal chawal sabzi (600 kcal)", "Dinner: Roti paneer sabzi (500 kcal)", "Snack: Banana almonds (200 kcal)"], "workout": "Chest Triceps", "workoutDetails": ["Push-ups 3x15", "Dumbbell press 3x10", "Tricep dips 3x12"]},
+    {"day": "Tuesday", "meals": ["Breakfast: Egg bhurji toast (400 kcal)", "Lunch: Chicken curry rice (650 kcal)", "Dinner: Moong dal khichdi (450 kcal)", "Snack: Protein shake (200 kcal)"], "workout": "Back Biceps", "workoutDetails": ["Pull-ups 3x8", "Dumbbell rows 3x10", "Bicep curls 3x12"]},
+    {"day": "Wednesday", "meals": ["Breakfast: Smoothie bowl (300 kcal)", "Lunch: Rajma chawal (600 kcal)", "Dinner: Grilled fish veggies (500 kcal)", "Snack: Fruit chaat (150 kcal)"], "workout": "REST DAY", "workoutDetails": ["30 min walk", "Stretching 10 mins"]},
+    {"day": "Thursday", "meals": ["Breakfast: Aloo paratha curd (450 kcal)", "Lunch: Chole rice (620 kcal)", "Dinner: Grilled chicken salad (480 kcal)", "Snack: Mixed nuts (200 kcal)"], "workout": "Legs", "workoutDetails": ["Squats 4x15", "Lunges 3x12", "Leg press 3x10"]},
+    {"day": "Friday", "meals": ["Breakfast: Upma coconut chutney (350 kcal)", "Lunch: Palak paneer roti (580 kcal)", "Dinner: Dal makhani tandoori roti (520 kcal)", "Snack: Roasted chana (180 kcal)"], "workout": "Shoulders Abs", "workoutDetails": ["Shoulder press 3x10", "Lateral raises 3x12", "Planks 3x60sec"]},
+    {"day": "Saturday", "meals": ["Breakfast: Idli sambar (300 kcal)", "Lunch: Chicken biryani (700 kcal)", "Dinner: Vegetable soup bread (400 kcal)", "Snack: Protein bar (200 kcal)"], "workout": "Cardio", "workoutDetails": ["Running 30 mins", "Jump rope 10 mins", "Cycling 20 mins"]},
+    {"day": "Sunday", "meals": ["Breakfast: Besan chilla chutney (380 kcal)", "Lunch: Home thali (650 kcal)", "Dinner: Light khichdi (380 kcal)", "Snack: Fresh fruit (150 kcal)"], "workout": "REST DAY", "workoutDetails": ["Yoga 30 mins", "Meditation 10 mins"]}
+  ],
+  "topTips": ["tip1 specific to ${goal}", "tip2", "tip3"],
+  "estimatedTimeline": "realistic for ${goal}",
+  "waterIntake": "${Math.round(weight * 0.033)} liters per day",
+  "sleepRecommendation": "7-8 hours per night"
+}
 
-Replace ALL X with real varied Indian food and exercise names specific to ${goal}.`;
+Replace ALL meal and workout values with UNIQUE Indian foods and exercises specific to ${goal}. Make every day different.`;
 
-    const text = await callGroq(prompt, { weight, height, age, goal, userId: req.user._id });
-    const result = parseGroqJSON(text);
+    const text = await callAI(prompt, { weight, height, age, goal, userId: req.user._id });
+    const result = parseAIJSON(text);
 
     await User.findByIdAndUpdate(req.user._id, {
       "profile.weight": weight,
