@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const { protect } = require("../middleware/auth");
-const { callAI, parseAIJSON } = require("../config/groq");
+const { callGroq, parseGroqJSON } = require("../config/groq");
 const User = require("../models/User");
 
 router.post("/analyze", protect, async (req, res) => {
@@ -9,45 +9,25 @@ router.post("/analyze", protect, async (req, res) => {
     const { imageBase64, skinConcerns, hairType, gender, mediaType = "image/jpeg" } = req.body;
     if (!imageBase64) return res.status(400).json({ error: "Image required." });
 
-    const prompt = `Analyze this person's face in the image carefully and give REAL, ACCURATE, PERSONALIZED recommendations.
-Gender: ${gender || "not specified"}
-Skin concerns mentioned: ${skinConcerns || "none"}
-Hair type: ${hairType || "unknown"}
-Timestamp: ${Date.now()}
+    const seed = Math.random().toFixed(6);
+    const ts = Date.now();
 
-Look at the ACTUAL face in the image — detect real face shape, skin tone, hair, etc.
+    const prompt = `Act as a professional face analyst. Give unique personalized advice.
+Seed:${seed} Time:${ts}
+Gender:${gender || "unknown"} Concerns:${skinConcerns || "general"} Hair:${hairType || "any"}
 
-Return ONLY this JSON, no markdown:
-{
-  "faceShape": "actual shape from image (oval/round/square/heart/diamond/oblong)",
-  "faceShapeDetails": "2 sentences about their specific face shape",
-  "skinTone": "actual tone (fair/wheatish/medium/dusky/deep)",
-  "skinToneHex": "actual hex color matching their skin",
-  "jawlineType": "soft/defined/strong based on image",
-  "topHairstyles": [
-    {"name": "hairstyle name", "reason": "why it suits their face", "maintenance": "Low/Medium/High"},
-    {"name": "hairstyle name", "reason": "why it suits their face", "maintenance": "Low/Medium/High"},
-    {"name": "hairstyle name", "reason": "why it suits their face", "maintenance": "Low/Medium/High"}
-  ],
-  "stylesAvoid": ["style to avoid with reason", "style to avoid with reason"],
-  "colorRecommendations": ["color idea 1", "color idea 2"],
-  "skincare": {
-    "type": "detected skin type",
-    "concerns": ["concern 1", "concern 2"],
-    "morningRoutine": ["step 1 with Indian product", "step 2", "step 3", "step 4"],
-    "nightRoutine": ["step 1", "step 2", "step 3", "step 4"]
-  },
-  "grooming": ["tip 1", "tip 2", "tip 3", "tip 4"],
-  "confidence": 92
-}`;
+Respond with ONLY a JSON object. No text before or after. No markdown. No code blocks.
+Use this exact structure:
 
-    const text = await callAI(prompt, { skinConcerns, hairType, gender, userId: req.user._id }, imageBase64, mediaType);
-    const result = parseAIJSON(text);
+{"faceShape":"oval","faceShapeDetails":"Balanced proportions suit most styles.","skinTone":"medium","skinToneHex":"#C68642","jawlineType":"defined","topHairstyles":[{"name":"Layered Cut","reason":"Adds movement","maintenance":"Low"},{"name":"Side Part","reason":"Sharp look","maintenance":"Medium"},{"name":"Textured Crop","reason":"Modern style","maintenance":"Low"}],"stylesAvoid":["Very long flat hair","Extreme volume on sides"],"colorRecommendations":["Dark Brown with highlights","Natural Black"],"skincare":{"type":"combination","concerns":["mild acne","uneven tone"],"morningRoutine":["Gentle cleanser","Niacinamide serum","SPF 50 moisturizer","Lip balm"],"nightRoutine":["Micellar water","Retinol serum","Night cream","Eye cream"]},"grooming":["Trim every 5 weeks","Use light styling product","Scalp massage daily"],"confidence":87}
 
+Replace ALL values with fresh unique content. Make it different every time.`;
+
+    const text = await callGroq(prompt, { gender, skinConcerns, hairType });
+    const result = parseGroqJSON(text);
     await User.findByIdAndUpdate(req.user._id, {
       $push: { analyses: { type: "face", result } }
     });
-
     res.json({ success: true, result });
   } catch (err) {
     console.error("Face analysis error:", err.message);

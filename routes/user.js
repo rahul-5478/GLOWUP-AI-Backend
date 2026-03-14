@@ -1,68 +1,56 @@
-const mongoose = require("mongoose");
-const bcrypt = require("bcryptjs");
+const express = require("express");
+const router = express.Router();
+const { protect } = require("../middleware/auth");
+const User = require("../models/User");
 
-const userSchema = new mongoose.Schema(
-  {
-    name: { type: String, required: true, trim: true },
-    email: { type: String, required: true, unique: true, lowercase: true, trim: true },
-    password: { type: String, required: true, minlength: 6 },
-    avatar: { type: String, default: "" },
-    profile: {
-      age: Number,
-      weight: Number,
-      height: Number,
-      weightUnit: { type: String, enum: ["kg", "lbs"], default: "kg" },
-      goal: { type: String, enum: ["weight_loss", "muscle_building", "weight_gain", "maintenance"], default: "maintenance" },
-    },
-    analyses: [
-      {
-        type: { type: String, enum: ["face", "fitness", "fashion", "skin"] },
-        result: mongoose.Schema.Types.Mixed,
-        createdAt: { type: Date, default: Date.now },
-      },
-    ],
-    glowScores: [
-      {
-        date: { type: Date, default: Date.now },
-        week: Number,
-        skinScore: { type: Number, default: 0 },
-        fitnessScore: { type: Number, default: 0 },
-        fashionScore: { type: Number, default: 0 },
-        overallScore: { type: Number, default: 0 },
-        notes: { type: String, default: "" },
-        grade: String,
-        title: String,
-        insight: String,
-        skinFeedback: String,
-        fitnessFeedback: String,
-        fashionFeedback: String,
-        topWin: String,
-        focusNext: String,
-        motivationalQuote: String,
-        badges: [String],
-      },
-    ],
-  },
-  { timestamps: true }
-);
-
-// Hash password before save
-userSchema.pre("save", async function (next) {
-  if (!this.isModified("password")) return next();
-  this.password = await bcrypt.hash(this.password, 12);
-  next();
+// Get user profile
+router.get("/profile", protect, async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id).select("-password");
+    res.json({ success: true, user });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-// Compare password
-userSchema.methods.comparePassword = async function (candidatePassword) {
-  return bcrypt.compare(candidatePassword, this.password);
-};
+// Update user profile
+router.put("/profile", protect, async (req, res) => {
+  try {
+    const { name, avatar, profile } = req.body;
+    const user = await User.findByIdAndUpdate(
+      req.user._id,
+      { name, avatar, profile },
+      { new: true, runValidators: true }
+    ).select("-password");
+    res.json({ success: true, user });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
-// Remove password from JSON output
-userSchema.methods.toJSON = function () {
-  const obj = this.toObject();
-  delete obj.password;
-  return obj;
-};
+// Get all analyses
+router.get("/analyses", protect, async (req, res) => {
+  try {
+    const { type } = req.query;
+    const user = await User.findById(req.user._id).select("analyses");
+    let analyses = user.analyses || [];
+    if (type) analyses = analyses.filter(a => a.type === type);
+    res.json({ success: true, analyses: analyses.reverse() });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
-module.exports = mongoose.model("User", userSchema);
+// Delete an analysis
+router.delete("/analyses/:id", protect, async (req, res) => {
+  try {
+    await User.findByIdAndUpdate(req.user._id, {
+      $pull: { analyses: { _id: req.params.id } }
+    });
+    res.json({ success: true, message: "Deleted successfully" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+module.exports = router;
