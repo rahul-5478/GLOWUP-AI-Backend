@@ -20,60 +20,43 @@ IMPORTANT RULES:
 - Give fresh, different recommendations each session
 - Return ONLY valid JSON. No markdown. No explanation. Start with { end with }`;
 
-  try {
-    const response = await axios.post(
-      GROQ_API_URL,
-      {
-        model: "llama-3.3-70b-versatile",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: prompt }
-        ],
-        max_tokens: 1200,
-        temperature: 1.0,
-        top_p: 0.9,
-        frequency_penalty: 0.5,
-        presence_penalty: 0.3,
+  const response = await axios.post(
+    GROQ_API_URL,
+    {
+      model: "llama-3.3-70b-versatile",
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: prompt }
+      ],
+      max_tokens: 4000,       // Increased to avoid truncation
+      temperature: 1.1,
+      top_p: 0.9,
+      frequency_penalty: 0.8,
+      presence_penalty: 0.6,
+    },
+    {
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${process.env.GROQ_API_KEY}`,
       },
-      {
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${process.env.GROQ_API_KEY}`,
-        },
-        timeout: 30000,
-      }
-    );
+      timeout: 30000,
+    }
+  );
 
-    const text = response.data.choices[0].message.content;
-    console.log("✅ Groq response received, length:", text.length);
-    console.log("📝 Groq raw (first 300):", text.substring(0, 300));
-    return text;
-
-  } catch (err) {
-    console.error("❌ Groq API error:", err.response?.data || err.message);
-    throw err;
-  }
+  const text = response.data.choices[0].message.content;
+  console.log("✅ Groq response received, length:", text.length);
+  console.log("📝 Groq raw (first 300):", text.substring(0, 300));
+  return text;
 };
 
 const parseGroqJSON = (text) => {
   try {
     const clean = text.replace(/```json|```/g, "").trim();
-    const parsed = JSON.parse(clean);
-    console.log("✅ JSON parsed successfully");
-    return parsed;
+    return JSON.parse(clean);
   } catch (e) {
-    console.log("⚠️ Direct parse failed, trying regex extract...");
+    // JSON extract karne ki koshish
     const match = text.match(/\{[\s\S]*\}/);
-    if (match) {
-      try {
-        const parsed = JSON.parse(match[0]);
-        console.log("✅ JSON extracted via regex");
-        return parsed;
-      } catch (e2) {
-        console.error("❌ JSON parse failed:", text.substring(0, 500));
-        throw new Error("Invalid JSON from AI");
-      }
-    }
+    if (match) return JSON.parse(match[0]);
     throw new Error("Invalid JSON from AI");
   }
 };
