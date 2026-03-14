@@ -7,7 +7,6 @@ const { protect } = require("../middleware/auth");
 // Create Order
 router.post("/create-order", protect, async (req, res) => {
   try {
-    // Lazy init — keys route ke andar load hongi
     console.log("💳 Payment create-order called");
     console.log("ENV KEY:", process.env.RAZORPAY_KEY_ID ? "EXISTS" : "MISSING");
     console.log("ENV SECRET:", process.env.RAZORPAY_KEY_SECRET ? "EXISTS" : "MISSING");
@@ -27,14 +26,20 @@ router.post("/create-order", protect, async (req, res) => {
     }
 
     const order = await razorpay.orders.create({
-      amount: amount * 100, // paise mein
+      amount: amount * 100,
       currency: "INR",
       receipt: `receipt_${Date.now()}`,
       notes: { planName, userId: req.user._id.toString() },
     });
 
     console.log("✅ Order created:", order.id);
-    res.json({ success: true, order });
+
+    // ✅ KEY bhi bhejo — frontend ko chahiye Razorpay checkout open karne ke liye
+    res.json({
+      success: true,
+      order,
+      key: process.env.RAZORPAY_KEY_ID,
+    });
   } catch (err) {
     console.error("❌ Payment error FULL:", JSON.stringify(err?.error || err?.message));
     res.status(500).json({ error: "Could not create order. Please try again." });
