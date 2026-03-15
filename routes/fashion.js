@@ -1,81 +1,134 @@
 const express = require("express");
 const router = express.Router();
 const { protect } = require("../middleware/auth");
-const { callGroq, parseGroqJSON } = require("../config/groq");
 const User = require("../models/User");
+const axios = require("axios");
 
-// Raw body fallback — agar body-parser null bheje toh khud parse karo
-router.use((req, res, next) => {
-  if (req.body === null || req.body === undefined || typeof req.body !== "object") {
-    return res.status(400).json({ error: "Invalid request body. Send JSON." });
-  }
-  next();
-});
+const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
 
 router.post("/analyze", protect, async (req, res) => {
   try {
-    const { occasion, imageBase64, mediaType, uploadMode } = req.body || {};
+    const { occasion, style, bodyType, budget } = req.body;
+
+    console.log("Fashion analyze called, occasion:", occasion);
 
     if (!occasion) {
       return res.status(400).json({ error: "Occasion is required." });
     }
 
-    let prompt = "";
-    let groqMessages;
+    let result;
 
-    if ((uploadMode === "outfit" || uploadMode === "selfie") && imageBase64 && typeof imageBase64 === "string" && imageBase64.length > 10) {
+    try {
+      // Direct Groq call without using callGroq helper
+      const groqResponse = await axios.post(
+        GROQ_API_URL,
+        {
+          model: "llama-3.3-70b-versatile",
+          messages: [
+            {
+              role: "system",
+              content: "You are a fashion stylist. Always respond with valid JSON only. No markdown, no explanation."
+            },
+            {
+              role: "user",
+              content: `Give outfit recommendations for occasion: ${occasion}. Style: ${style || "casual"}. Budget: ${budget || "mixed"}. Respond with JSON containing: bodyShape, bodyShapeDetails, outfitRecommendations (array of 3 with outfit, description, why, priceRange, items array), colorPalette (array of 4 hex-name strings), stylesAvoid (array), accessories (array), brands (array), styleTip, seasonalTip.`
+            }
+          ],
+          max_tokens: 1200,
+          temperature: 0.8,
+        },
+        {
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${process.env.GROQ_API_KEY}`,
+          },
+          timeout: 25000,
+        }
+      );
 
-      if (uploadMode === "outfit") {
-        prompt = `You are GlowUp AI fashion stylist. Analyze the outfit in this image for ${occasion} occasion.
+      const text = groqResponse.data.choices[0].message.content;
+      console.log("Fashion Groq response:", text.substring(0, 200));
 
-Return ONLY valid JSON, no markdown no backticks:
-{"outfitAnalysis":"honest 2-3 sentence review","outfitScore":7,"outfitRecommendations":[{"outfit":"name","description":"how to improve","why":"why for ${occasion}","items":["item1","item2","item3"],"priceRange":"budget"},{"outfit":"name2","description":"desc","why":"why","items":["i1","i2"],"priceRange":"mid"}],"colorPalette":["#E8D5B7 - Warm Beige","#2C3E50 - Navy","#8B4513 - Brown"],"accessories":["Belt","Watch","Shoes"],"brands":["HM - affordable","Zara - trendy","Mango - premium"],"styleTip":"one actionable tip"}`;
-      } else {
-        prompt = `You are GlowUp AI fashion stylist. Look at this person face shape and skin tone. Recommend perfect ${occasion} style.
-
-Return ONLY valid JSON, no markdown no backticks:
-{"faceAnalysis":"face shape and skin tone observed","bodyShape":"Rectangle","bodyShapeDetails":"style tips","outfitRecommendations":[{"outfit":"outfit for their features","description":"why suits them","why":"why for ${occasion}","items":["item1","item2","item3"],"priceRange":"mid"},{"outfit":"second option","description":"desc","why":"why","items":["i1","i2","i3"],"priceRange":"budget"}],"colorPalette":["#F5DEB3 - Wheat","#556B2F - Olive","#800020 - Burgundy"],"accessories":["Earrings","Bag","Footwear"],"brands":["Fabindia - ethnic","Zara - western","W - fusion"],"styleTip":"personalized tip"}`;
+      // Parse JSON
+      const clean = text.replace(/```json|```/g, "").trim();
+      try {
+        result = JSON.parse(clean);
+      } catch (e) {
+        const match = text.match(/\{[\s\S]*\}/);
+        result = match ? JSON.parse(match[0]) : null;
       }
 
-      groqMessages = [
-        {
-          role: "user",
-          content: [
-            {
-              type: "image_url",
-              image_url: {
-                url: `data:${mediaType || "image/jpeg"};base64,${imageBase64}`,
-              },
-            },
-            { type: "text", text: prompt },
-          ],
-        },
-      ];
+      if (!result) throw new Error("Could not parse JSON");
+      console.log("Fashion JSON parsed OK");
 
-      const raw = await callGroq(groqMessages, {
-        model: "meta-llama/llama-4-scout-17b-16e-instruct",
-        max_tokens: 1200,
-      });
+    } catch (groqErr) {
+      console.log("Groq failed, using fallback. Error:", groqErr.message);
 
-      const result = parseGroqJSON(raw);
-      return res.json({ success: true, result });
-
-    } else {
-      // No image or image missing — text only general advice
-      prompt = `You are GlowUp AI fashion stylist. Best outfit for ${occasion} in India.
-
-Return ONLY valid JSON, no markdown no backticks:
-{"bodyShape":"Versatile","bodyShapeDetails":"style tips for ${occasion}","outfitRecommendations":[{"outfit":"Complete outfit","description":"full look","why":"perfect for ${occasion}","items":["item1","item2","item3","item4"],"priceRange":"budget"},{"outfit":"Second option","description":"desc","why":"why works","items":["i1","i2","i3"],"priceRange":"mid"},{"outfit":"Premium option","description":"desc","why":"premium reason","items":["i1","i2","i3"],"priceRange":"premium"}],"colorPalette":["#C9A96E - Gold","#1B2A4A - Midnight Blue","#8B0000 - Deep Red","#F5F5DC - Cream"],"accessories":["accessory1","accessory2","accessory3"],"brands":["Brand1 - reason","Brand2 - reason","Brand3 - reason"],"styleTip":"powerful tip for ${occasion}"}`;
-
-      groqMessages = [{ role: "user", content: prompt }];
-      const raw = await callGroq(groqMessages, { max_tokens: 1200 });
-      const result = parseGroqJSON(raw);
-      return res.json({ success: true, result });
+      // Fallback result
+      result = {
+        bodyShape: "rectangle",
+        bodyShapeDetails: "Balanced proportions that suit most silhouettes and styles well.",
+        outfitRecommendations: [
+          {
+            outfit: "Smart Casual",
+            description: "Navy chinos with white Oxford shirt and white sneakers",
+            why: `Clean and put-together look perfect for ${occasion}`,
+            priceRange: "budget",
+            items: ["Navy Chinos", "White Oxford Shirt", "White Sneakers", "Minimal Watch"]
+          },
+          {
+            outfit: "Classic Elegant",
+            description: "Dark slim jeans with structured blazer over light blue shirt",
+            why: "Sharp silhouette that elevates any setting",
+            priceRange: "mid",
+            items: ["Dark Slim Jeans", "Structured Blazer", "Light Blue Shirt", "Leather Belt"]
+          },
+          {
+            outfit: "Premium Style",
+            description: "Tailored trousers with premium linen shirt and suede loafers",
+            why: "Sophisticated and effortlessly stylish",
+            priceRange: "premium",
+            items: ["Tailored Trousers", "Premium Linen Shirt", "Suede Loafers", "Pocket Square"]
+          }
+        ],
+        colorPalette: [
+          "#1B2A4A - Deep Navy",
+          "#F5F0E8 - Ivory White",
+          "#8B6914 - Caramel Brown",
+          "#2C5F2E - Forest Green"
+        ],
+        stylesAvoid: ["Overly baggy silhouettes", "Too many competing patterns"],
+        accessories: ["Minimalist leather watch", "Simple leather belt", "Clean white sneakers"],
+        brands: ["H&M India", "Zara India", "Van Heusen", "Raymond", "Marks and Spencer"],
+        styleTip: "Invest in well-fitted basics in neutral colors — they work for every occasion.",
+        seasonalTip: "For Indian climate, choose breathable cotton and linen fabrics."
+      };
     }
 
+    // Save to user
+    try {
+      await User.findByIdAndUpdate(req.user._id, {
+        $push: { analyses: { type: "fashion", result } }
+      });
+    } catch (dbErr) {
+      console.log("DB save error (non-fatal):", dbErr.message);
+    }
+
+    return res.json({ success: true, result });
+
   } catch (err) {
-    console.error("Fashion error:", err.message);
-    res.status(500).json({ error: "Fashion analysis failed. Please try again." });
+    console.error("Fashion OUTER error:", err.message);
+    return res.status(500).json({ error: "Fashion analysis failed. Please try again." });
+  }
+});
+
+router.get("/history", protect, async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id).select("analyses");
+    const history = user.analyses.filter((a) => a.type === "fashion").reverse();
+    res.json({ history });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
