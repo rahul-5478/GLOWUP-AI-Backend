@@ -6,13 +6,11 @@ const callGroq = async (prompt, userContext = {}) => {
   const uniqueId = Math.random().toString(36).substring(7);
   const timestamp = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
 
-  // System prompt as plain string
   const systemContent = `You are GlowUp AI - a personalized beauty and fitness assistant.
 Time: ${timestamp} | Session: ${uniqueId}
 Context: ${JSON.stringify(userContext)}
-Rules: Give UNIQUE recommendations every time. Consider Indian lifestyle. Return ONLY valid JSON when asked. No markdown.`;
+Rules: Give UNIQUE recommendations every time. Consider Indian lifestyle. Return ONLY valid JSON when asked. No markdown. No extra text before or after JSON.`;
 
-  // User content must be plain string
   const userContent = String(prompt);
 
   try {
@@ -24,8 +22,8 @@ Rules: Give UNIQUE recommendations every time. Consider Indian lifestyle. Return
           { role: "system", content: systemContent },
           { role: "user", content: userContent }
         ],
-        max_tokens: 1500,
-        temperature: 1.0,
+        max_tokens: 4000,       // ✅ was 1500 — increased to prevent truncation
+        temperature: 0.7,       // ✅ was 1.0 — lower = more stable JSON
         top_p: 0.9,
         frequency_penalty: 0.5,
         presence_penalty: 0.3,
@@ -55,13 +53,32 @@ const parseGroqJSON = (text) => {
     const clean = text.replace(/```json|```/g, "").trim();
     return JSON.parse(clean);
   } catch (e) {
+    // Try to extract JSON object
     const match = text.match(/\{[\s\S]*\}/);
     if (match) {
       try {
         return JSON.parse(match[0]);
       } catch (e2) {
-        console.error("❌ JSON parse failed:", text.substring(0, 300));
-        throw new Error("Invalid JSON from AI");
+        // Attempt to fix truncated JSON by closing open brackets
+        try {
+          let truncated = match[0];
+          const openBraces = (truncated.match(/\{/g) || []).length;
+          const closeBraces = (truncated.match(/\}/g) || []).length;
+          const openBrackets = (truncated.match(/\[/g) || []).length;
+          const closeBrackets = (truncated.match(/\]/g) || []).length;
+
+          // Remove trailing comma if present
+          truncated = truncated.replace(/,\s*$/, "");
+
+          // Close open arrays and objects
+          truncated += "]".repeat(Math.max(0, openBrackets - closeBrackets));
+          truncated += "}".repeat(Math.max(0, openBraces - closeBraces));
+
+          return JSON.parse(truncated);
+        } catch (e3) {
+          console.error("❌ JSON parse failed after repair attempt:", text.substring(0, 300));
+          throw new Error("Invalid JSON from AI");
+        }
       }
     }
     throw new Error("Invalid JSON from AI");
