@@ -22,8 +22,8 @@ Rules: Give UNIQUE recommendations every time. Consider Indian lifestyle. Return
           { role: "system", content: systemContent },
           { role: "user", content: userContent }
         ],
-        max_tokens: 4000,       // ✅ was 1500 — increased to prevent truncation
-        temperature: 0.7,       // ✅ was 1.0 — lower = more stable JSON
+        max_tokens: 4000,
+        temperature: 0.7,
         top_p: 0.9,
         frequency_penalty: 0.5,
         presence_penalty: 0.3,
@@ -49,40 +49,33 @@ Rules: Give UNIQUE recommendations every time. Consider Indian lifestyle. Return
 };
 
 const parseGroqJSON = (text) => {
-  try {
-    const clean = text.replace(/```json|```/g, "").trim();
-    return JSON.parse(clean);
-  } catch (e) {
-    // Try to extract JSON object
-    const match = text.match(/\{[\s\S]*\}/);
-    if (match) {
-      try {
-        return JSON.parse(match[0]);
-      } catch (e2) {
-        // Attempt to fix truncated JSON by closing open brackets
-        try {
-          let truncated = match[0];
-          const openBraces = (truncated.match(/\{/g) || []).length;
-          const closeBraces = (truncated.match(/\}/g) || []).length;
-          const openBrackets = (truncated.match(/\[/g) || []).length;
-          const closeBrackets = (truncated.match(/\]/g) || []).length;
+  // Step 1: strip markdown fences
+  let clean = text.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "").trim();
 
-          // Remove trailing comma if present
-          truncated = truncated.replace(/,\s*$/, "");
+  // Step 2: direct parse
+  try { return JSON.parse(clean); } catch (_) {}
 
-          // Close open arrays and objects
-          truncated += "]".repeat(Math.max(0, openBrackets - closeBrackets));
-          truncated += "}".repeat(Math.max(0, openBraces - closeBraces));
-
-          return JSON.parse(truncated);
-        } catch (e3) {
-          console.error("❌ JSON parse failed after repair attempt:", text.substring(0, 300));
-          throw new Error("Invalid JSON from AI");
-        }
+  // Step 3: find first complete { } block using depth tracking
+  let depth = 0, start = -1, end = -1;
+  for (let i = 0; i < clean.length; i++) {
+    if (clean[i] === "{") {
+      if (start === -1) start = i;
+      depth++;
+    } else if (clean[i] === "}") {
+      depth--;
+      if (depth === 0 && start !== -1) {
+        end = i;
+        break;
       }
     }
-    throw new Error("Invalid JSON from AI");
   }
+
+  if (start !== -1 && end !== -1) {
+    try { return JSON.parse(clean.slice(start, end + 1)); } catch (_) {}
+  }
+
+  console.error("❌ JSON parse failed:", clean.substring(0, 400));
+  throw new Error("Invalid JSON from AI");
 };
 
 module.exports = { callGroq, parseGroqJSON };

@@ -108,19 +108,12 @@ router.post("/analyze", protect, async (req, res) => {
     const skinProblems = detectSkinProblems(skinStatus);
     const skinScore = Math.round(skinStatus.health);
 
-    // ── FIX 1: Use JSON.stringify for problems — no template literal injection ──
-    const problemsJSON = JSON.stringify(
-      skinProblems.map((p) => ({
-        name: p.name,
-        severity: p.severity,
-        score: p.score,
-        description: "",
-        cause: "",
-      }))
-    );
+    // ── Plain text problems — no JSON injection ──
+    const problemsList = skinProblems.length > 0
+      ? skinProblems.map(p => `${p.name} (severity: ${p.severity}, score: ${p.score})`).join(", ")
+      : "None detected";
 
-    // ── FIX 2: Shortened prompt to stay within token limits ──
-    const prompt = `You are GlowUp AI's expert dermatologist. Return ONLY valid JSON, no markdown, no extra text.
+    const prompt = `You are GlowUp AI's expert dermatologist. Return ONLY valid JSON. No markdown, no text outside the JSON object.
 
 SCAN DATA:
 - Face Shape: ${faceShape}
@@ -128,9 +121,9 @@ SCAN DATA:
 - Skin Score: ${skinScore}/100
 - Acne: ${skinStatus.acne}, Dark Circles: ${skinStatus.dark_circle}, Stains: ${skinStatus.stain}
 - Pores: ${skinStatus.pore}, Wrinkles: ${skinStatus.wrinkle}, Glow: ${skinStatus.saturation}
-- Problems: ${skinProblems.map((p) => p.name).join(", ") || "None"}
+- Detected Problems: ${problemsList}
 
-Return this exact JSON structure (fill all placeholder values):
+Return this exact JSON structure with all fields filled:
 {
   "faceShape": "${faceShape}",
   "faceShapeDetails": "2 sentences about ${faceShape} face shape",
@@ -139,11 +132,13 @@ Return this exact JSON structure (fill all placeholder values):
   "jawlineType": "soft/defined/strong",
   "skinScore": ${skinScore},
   "skinGrade": "A/B/C/D/F",
-  "detectedProblems": ${problemsJSON.replace(/("description":)""/g, '$1"fill description"').replace(/("cause":)""/g, '$1"fill cause"')},
+  "detectedProblems": [
+    { "name": "problem name", "severity": "High/Moderate/Low", "score": 0, "description": "what it is", "cause": "why it happens" }
+  ],
   "topHairstyles": [
-    {"name": "style1", "reason": "why", "maintenance": "Low"},
-    {"name": "style2", "reason": "why", "maintenance": "Medium"},
-    {"name": "style3", "reason": "why", "maintenance": "High"}
+    {"name": "", "reason": "", "maintenance": "Low/Medium/High"},
+    {"name": "", "reason": "", "maintenance": "Low/Medium/High"},
+    {"name": "", "reason": "", "maintenance": "Low/Medium/High"}
   ],
   "skincareProducts": [
     {"step":1,"type":"Cleanser","productName":"","brand":"","price":"₹","why":"","howToUse":"","availableAt":"Nykaa"},
@@ -154,17 +149,17 @@ Return this exact JSON structure (fill all placeholder values):
   ],
   "treatmentPlan": {
     "duration": "4 weeks",
-    "goal": "expected improvement",
-    "weeklyFocus": ["Week 1 focus", "Week 2 focus", "Week 3 focus", "Week 4 focus"],
-    "morningRoutine": ["step1", "step2", "step3", "step4"],
-    "nightRoutine": ["step1", "step2", "step3"],
-    "doNot": ["avoid1", "avoid2", "avoid3"]
+    "goal": "",
+    "weeklyFocus": ["", "", "", ""],
+    "morningRoutine": ["", "", "", ""],
+    "nightRoutine": ["", "", ""],
+    "doNot": ["", "", ""]
   },
-  "dietForSkin": ["food1", "food2", "food3", "water tip", "Indian food tip"],
-  "lifestyleTips": ["tip1", "tip2", "tip3", "tip4"],
-  "grooming": ["tip1", "tip2", "tip3"],
-  "colorRecommendations": ["color1", "color2", "color3"],
-  "stylesAvoid": ["style1 reason", "style2 reason"],
+  "dietForSkin": ["", "", "", "", ""],
+  "lifestyleTips": ["", "", "", ""],
+  "grooming": ["", "", ""],
+  "colorRecommendations": ["", "", ""],
+  "stylesAvoid": ["", ""],
   "confidence": 90,
   "nextScanIn": "2 weeks"
 }`;
@@ -175,7 +170,11 @@ Return this exact JSON structure (fill all placeholder values):
 
     const result = parseGroqJSON(text);
 
-    // ── FIX 3: Fill description/cause from Groq if empty ──
+    if (!result || typeof result !== "object") {
+      throw new Error("AI returned invalid structure");
+    }
+
+    // Merge Face++ problem scores into Groq result
     if (result.detectedProblems && skinProblems.length > 0) {
       result.detectedProblems = result.detectedProblems.map((p, i) => ({
         ...skinProblems[i],
@@ -196,6 +195,7 @@ Return this exact JSON structure (fill all placeholder values):
     });
 
     res.json({ success: true, result });
+
   } catch (err) {
     console.error("=== FACE ANALYSIS ERROR ===");
     console.error("Message:", err.message);
@@ -214,7 +214,7 @@ router.get("/history", protect, async (req, res) => {
     const faceHistory = user.analyses
       .filter((a) => a.type === "face")
       .reverse()
-      .slice(0, 10); // limit to last 10
+      .slice(0, 10);
     res.json({ history: faceHistory });
   } catch (err) {
     res.status(500).json({ error: err.message });
