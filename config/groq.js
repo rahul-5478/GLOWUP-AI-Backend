@@ -22,7 +22,7 @@ Rules: Give UNIQUE recommendations every time. Consider Indian lifestyle. Return
           { role: "system", content: systemContent },
           { role: "user", content: userContent }
         ],
-        max_tokens: 4000,
+        max_tokens: 8000,
         temperature: 0.7,
         top_p: 0.9,
         frequency_penalty: 0.5,
