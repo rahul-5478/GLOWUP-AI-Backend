@@ -4,17 +4,75 @@ const { protect } = require("../middleware/auth");
 const { callGroq, parseGroqJSON } = require("../config/groq");
 const User = require("../models/User");
 
+// ─── FOOD SEARCH ──────────────────────────────────────────────────────────────
+router.post("/search-food", async (req, res) => {
+  try {
+    const { query } = req.body;
+    if (!query) return res.status(400).json({ error: "Query required" });
+
+    const prompt = `You are a nutrition database. User searched: "${query}"
+
+Return ONLY this JSON array with 8 Indian food items matching the search:
+[
+  {"name": "food name", "cal": 150, "protein": 5, "carbs": 25, "fat": 3, "serving": "1 bowl (200g)"},
+  {"name": "food name 2", "cal": 200, "protein": 8, "carbs": 30, "fat": 5, "serving": "1 plate"}
+]
+
+Rules:
+- Include exact match + similar/related items
+- All values must be realistic Indian food nutrition
+- Return ONLY the JSON array, no other text`;
+
+    const text = await callGroq(prompt, { query });
+    let clean = text.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "").trim();
+    const match = clean.match(/\[[\s\S]*\]/);
+    if (!match) return res.json({ results: [] });
+    const results = JSON.parse(match[0]);
+    res.json({ results });
+  } catch (err) {
+    console.error("Food search error:", err.message);
+    res.status(500).json({ error: "Search failed" });
+  }
+});
+
+// ─── SCAN FOOD ────────────────────────────────────────────────────────────────
+router.post("/scan-food", protect, async (req, res) => {
+  try {
+    const { imageBase64 } = req.body;
+    if (!imageBase64) return res.status(400).json({ error: "Image required" });
+
+    const prompt = `You are a food calorie scanner. Analyze this food image and return ONLY this JSON:
+{
+  "foodName": "name of food",
+  "calories": 350,
+  "protein": 12,
+  "carbs": 48,
+  "fat": 10,
+  "serving": "1 plate (estimated)",
+  "tip": "one short health tip"
+}
+No markdown, no extra text.`;
+
+    const text = await callGroq(prompt, { task: "scan-food" });
+    const result = parseGroqJSON(text);
+    res.json({ success: true, result });
+  } catch (err) {
+    console.error("Scan food error:", err.message);
+    res.status(500).json({ error: "Scan failed" });
+  }
+});
+
+// ─── FITNESS PLAN ─────────────────────────────────────────────────────────────
 router.post("/plan", protect, async (req, res) => {
   try {
-    const { weight, height, age, goal, unit = "metric" } = req.body;
+    const { weight, height, age, goal, lifestyle, stomachIssue, targetDays } = req.body;
     if (!weight || !height || !age || !goal)
       return res.status(400).json({ error: "weight, height, age, and goal are required." });
 
     const bmi = (weight / ((height / 100) ** 2)).toFixed(1);
     const seed = Math.random().toFixed(4);
 
-    // Short prompt to avoid truncation
-    const prompt = `Fitness plan for: ${weight}kg, ${height}cm, ${age}yrs, goal=${goal}, BMI=${bmi}, seed=${seed}
+    const prompt = `Fitness plan for: ${weight}kg, ${height}cm, ${age}yrs, goal=${goal}, lifestyle=${lifestyle || "moderate"}, stomach=${stomachIssue || "none"}, days=${targetDays || 30}, BMI=${bmi}, seed=${seed}
 
 Return ONLY this JSON (keep meals SHORT, max 40 chars each):
 {
@@ -36,10 +94,14 @@ Return ONLY this JSON (keep meals SHORT, max 40 chars each):
   "sleepRecommendation": "7-8 hours"
 }
 
-IMPORTANT: Replace ALL values with real content for goal=${goal}. Keep every meal under 40 chars.`;
+IMPORTANT: Replace ALL placeholder values with real content for goal=${goal}.`;
 
     const text = await callGroq(prompt, { weight, height, age, goal });
     const result = parseGroqJSON(text);
+
+    if (!result || typeof result !== "object") {
+      throw new Error("AI returned invalid structure");
+    }
 
     await User.findByIdAndUpdate(req.user._id, {
       "profile.weight": weight,
@@ -56,6 +118,7 @@ IMPORTANT: Replace ALL values with real content for goal=${goal}. Keep every mea
   }
 });
 
+// ─── HISTORY ──────────────────────────────────────────────────────────────────
 router.get("/history", protect, async (req, res) => {
   try {
     const user = await User.findById(req.user._id).select("analyses");
