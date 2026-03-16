@@ -8,13 +8,14 @@ const userSchema = new mongoose.Schema(
     password: { type: String, required: true, minlength: 6 },
     avatar: { type: String, default: "" },
     profile: {
-      age: Number,
-      weight: Number,
-      height: Number,
-      gender: { type: String, enum: ["male", "female", "other"], default: "" },
-      skinType: { type: String, enum: ["oily", "dry", "normal", "combination", "sensitive"], default: "normal" },
-      weightUnit: { type: String, enum: ["kg", "lbs"], default: "kg" },
-      goal: { type: String, enum: ["weight_loss", "muscle_building", "weight_gain", "skin_glow", "style_upgrade", "maintenance"], default: "maintenance" },
+      age: { type: Number, default: null },
+      weight: { type: Number, default: null },
+      height: { type: Number, default: null },
+      // ✅ enum hataya — koi bhi string save ho sakti hai
+      gender: { type: String, default: "" },
+      skinType: { type: String, default: "" },
+      weightUnit: { type: String, default: "kg" },
+      goal: { type: String, default: "" },
     },
     analyses: [
       {
