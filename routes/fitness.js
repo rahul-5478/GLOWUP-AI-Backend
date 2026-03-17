@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const { protect } = require("../middleware/auth");
-const { callGroq, parseGroqJSON } = require("../config/groq");
+const { callGemini, parseGeminiJSON } = require("../config/gemini");
 const User = require("../models/User");
 
 // ─── FOOD SEARCH ──────────────────────────────────────────────────────────────
@@ -23,7 +23,7 @@ Rules:
 - All values must be realistic Indian food nutrition
 - Return ONLY the JSON array, no other text`;
 
-    const text = await callGroq(prompt, { query });
+    const text = await callGemini(prompt, { query });
     let clean = text.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "").trim();
     const match = clean.match(/\[[\s\S]*\]/);
     if (!match) return res.json({ results: [] });
@@ -53,8 +53,8 @@ router.post("/scan-food", protect, async (req, res) => {
 }
 No markdown, no extra text.`;
 
-    const text = await callGroq(prompt, { task: "scan-food" });
-    const result = parseGroqJSON(text);
+    const text = await callGemini(prompt, { task: "scan-food" });
+    const result = parseGeminiJSON(text);
     res.json({ success: true, result });
   } catch (err) {
     console.error("Scan food error:", err.message);
@@ -96,8 +96,8 @@ Return ONLY this JSON (keep meals SHORT, max 40 chars each):
 
 IMPORTANT: Replace ALL placeholder values with real content for goal=${goal}.`;
 
-    const text = await callGroq(prompt, { weight, height, age, goal });
-    const result = parseGroqJSON(text);
+    const text = await callGemini(prompt, { weight, height, age, goal });
+    const result = parseGeminiJSON(text);
 
     if (!result || typeof result !== "object") {
       throw new Error("AI returned invalid structure");

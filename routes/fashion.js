@@ -1,15 +1,14 @@
 const express = require("express");
 const router = express.Router();
 const { protect } = require("../middleware/auth");
+const { GoogleGenerativeAI } = require("@google/generative-ai");
 const User = require("../models/User");
-const axios = require("axios");
 
-const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
+const genai = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 router.post("/analyze", protect, async (req, res) => {
   try {
     const { occasion, style, bodyType, budget } = req.body;
-
     console.log("Fashion analyze called, occasion:", occasion);
 
     if (!occasion) {
@@ -19,37 +18,19 @@ router.post("/analyze", protect, async (req, res) => {
     let result;
 
     try {
-      // Direct Groq call without using callGroq helper
-      const groqResponse = await axios.post(
-        GROQ_API_URL,
-        {
-          model: "llama-3.3-70b-versatile",
-          messages: [
-            {
-              role: "system",
-              content: "You are a fashion stylist. Always respond with valid JSON only. No markdown, no explanation."
-            },
-            {
-              role: "user",
-              content: `Give outfit recommendations for occasion: ${occasion}. Style: ${style || "casual"}. Budget: ${budget || "mixed"}. Respond with JSON containing: bodyShape, bodyShapeDetails, outfitRecommendations (array of 3 with outfit, description, why, priceRange, items array), colorPalette (array of 4 hex-name strings), stylesAvoid (array), accessories (array), brands (array), styleTip, seasonalTip.`
-            }
-          ],
-          max_tokens: 1200,
-          temperature: 0.8,
-        },
-        {
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${process.env.GROQ_API_KEY}`,
-          },
-          timeout: 25000,
-        }
+      const model = genai.getGenerativeModel({
+        model: "gemini-2.0-flash",
+        systemInstruction: "You are a fashion stylist. Always respond with valid JSON only. No markdown, no explanation.",
+        generationConfig: { maxOutputTokens: 1200, temperature: 0.8 },
+      });
+
+      const geminiResponse = await model.generateContent(
+        `Give outfit recommendations for occasion: ${occasion}. Style: ${style || "casual"}. Budget: ${budget || "mixed"}. Respond with JSON containing: bodyShape, bodyShapeDetails, outfitRecommendations (array of 3 with outfit, description, why, priceRange, items array), colorPalette (array of 4 hex-name strings), stylesAvoid (array), accessories (array), brands (array), styleTip, seasonalTip.`
       );
 
-      const text = groqResponse.data.choices[0].message.content;
-      console.log("Fashion Groq response:", text.substring(0, 200));
+      const text = geminiResponse.response.text();
+      console.log("Fashion Gemini response:", text.substring(0, 200));
 
-      // Parse JSON
       const clean = text.replace(/```json|```/g, "").trim();
       try {
         result = JSON.parse(clean);
@@ -61,10 +42,8 @@ router.post("/analyze", protect, async (req, res) => {
       if (!result) throw new Error("Could not parse JSON");
       console.log("Fashion JSON parsed OK");
 
-    } catch (groqErr) {
-      console.log("Groq failed, using fallback. Error:", groqErr.message);
-
-      // Fallback result
+    } catch (geminiErr) {
+      console.log("Gemini failed, using fallback. Error:", geminiErr.message);
       result = {
         bodyShape: "rectangle",
         bodyShapeDetails: "Balanced proportions that suit most silhouettes and styles well.",
@@ -105,7 +84,6 @@ router.post("/analyze", protect, async (req, res) => {
       };
     }
 
-    // Save to user
     try {
       await User.findByIdAndUpdate(req.user._id, {
         $push: { analyses: { type: "fashion", result } }

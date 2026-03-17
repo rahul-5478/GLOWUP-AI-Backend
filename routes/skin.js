@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const { protect } = require("../middleware/auth");
-const { callGroq, parseGroqJSON } = require("../config/groq");
+const { callGemini, parseGeminiJSON } = require("../config/gemini"); // ✅ Gemini
 const axios = require("axios");
 const FormData = require("form-data");
 
@@ -61,7 +61,7 @@ function calcScore(ss) {
 }
 const grade = (s) => s >= 85 ? "A" : s >= 70 ? "B" : s >= 55 ? "C" : "D";
 
-// ── Fallback data if AI fails ─────────────────────────────────────────────────
+// ── Fallback data ─────────────────────────────────────────────────────────────
 function getFallback(faceData, skinScore) {
   return {
     skinType: "combination",
@@ -70,7 +70,7 @@ function getFallback(faceData, skinScore) {
     grade: grade(skinScore),
     detectedProblems: [
       { name: "Acne", severity: "Mild", severityPercent: faceData?.ss?.acne || 30, description: "Excess oil production clogging pores causing mild breakouts.", affectedArea: "T-zone", urgency: "Medium" },
-      { name: "Dark Circles", severity: "Mild", severityPercent: faceData?.ss?.darkCircle || 25, description: "Thin skin under eyes showing blood vessels causing discoloration.", affectedArea: "Under eyes", urgency: "Low" },
+      { name: "Dark Circles", severity: "Mild", severityPercent: faceData?.ss?.darkCircle || 25, description: "Thin skin under eyes showing blood vessels.", affectedArea: "Under eyes", urgency: "Low" },
     ],
     skinStrengths: ["Natural skin elasticity", "Good overall texture", "Healthy skin tone"],
     estimatedResults: "With consistent routine, expect 60-70% improvement in 6-8 weeks",
@@ -80,22 +80,22 @@ function getFallback(faceData, skinScore) {
     dietForSkin: ["Eat amla daily for Vitamin C boost", "Drink haldi milk before sleep", "Avoid excess dairy if acne-prone", "Green tea instead of regular chai"],
     lifestyleTips: ["Change pillowcase every 3 days", "Never skip sunscreen even indoors", "Drink minimum 3 liters water daily"],
     productPlan: [
-      { step: 1, timeOfDay: "Morning", category: "Cleanser", productName: "Minimalist Salicylic Acid 2% Face Wash", brand: "Minimalist", price: "₹299", availableAt: "Nykaa", whyThisProduct: "Salicylic acid unclogs pores and reduces acne without over-drying", howToUse: "Apply on wet face, massage 60 seconds, rinse with cold water", targetsProblems: ["acne", "pores"], duration: "Daily" },
-      { step: 2, timeOfDay: "Morning", category: "Serum", productName: "Minimalist Niacinamide 10% + Zinc", brand: "Minimalist", price: "₹599", availableAt: "Nykaa, Amazon", whyThisProduct: "Reduces enlarged pores, controls oil, fades dark spots and acne marks", howToUse: "3-4 drops on clean skin, pat gently, wait 2 minutes before next step", targetsProblems: ["pores", "dark spots", "oil control"], duration: "Daily" },
-      { step: 3, timeOfDay: "Morning", category: "Moisturizer", productName: "Neutrogena Hydro Boost Water Gel", brand: "Neutrogena", price: "₹799", availableAt: "Nykaa, Flipkart", whyThisProduct: "Lightweight, non-comedogenic hydration that won't clog pores", howToUse: "Pea-sized amount, press gently into skin after serum", targetsProblems: ["hydration", "barrier repair"], duration: "Daily" },
-      { step: 4, timeOfDay: "Morning", category: "Sunscreen", productName: "RE'EQUIL Oxybenzone Free Sunscreen SPF 50 PA+++", brand: "RE'EQUIL", price: "₹595", availableAt: "Nykaa, Amazon", whyThisProduct: "Prevents pigmentation worsening, no white cast, gentle formula", howToUse: "2-finger length amount, last step of morning routine, 20 mins before sun", targetsProblems: ["pigmentation", "UV protection"], duration: "Every morning without fail" },
-      { step: 5, timeOfDay: "Night", category: "Cleanser", productName: "Simple Kind to Skin Moisturising Facial Wash", brand: "Simple", price: "₹349", availableAt: "Nykaa, Flipkart", whyThisProduct: "Gentle evening cleanse removes sunscreen, makeup and pollution", howToUse: "Massage on wet face for 60 seconds, rinse thoroughly", targetsProblems: ["cleansing", "gentle care"], duration: "Every night" },
-      { step: 6, timeOfDay: "Night", category: "Serum", productName: "Dot & Key Watermelon Hyaluronic Cooling Serum", brand: "Dot & Key", price: "₹545", availableAt: "Nykaa", whyThisProduct: "Deep overnight hydration, plumps skin and reduces fine lines", howToUse: "4-5 drops, press into skin gently after cleansing", targetsProblems: ["hydration", "anti-aging"], duration: "Every night" },
+      { step: 1, timeOfDay: "Morning", category: "Cleanser", productName: "Minimalist Salicylic Acid 2% Face Wash", brand: "Minimalist", price: "₹299", availableAt: "Nykaa", whyThisProduct: "Unclogs pores and reduces acne without over-drying", howToUse: "Apply on wet face, massage 60 seconds, rinse with cold water", targetsProblems: ["acne", "pores"], duration: "Daily" },
+      { step: 2, timeOfDay: "Morning", category: "Serum", productName: "Minimalist Niacinamide 10% + Zinc", brand: "Minimalist", price: "₹599", availableAt: "Nykaa, Amazon", whyThisProduct: "Reduces pores, controls oil, fades dark spots", howToUse: "3-4 drops, pat gently, wait 2 minutes", targetsProblems: ["pores", "dark spots"], duration: "Daily" },
+      { step: 3, timeOfDay: "Morning", category: "Moisturizer", productName: "Neutrogena Hydro Boost Water Gel", brand: "Neutrogena", price: "₹799", availableAt: "Nykaa, Flipkart", whyThisProduct: "Lightweight non-comedogenic hydration", howToUse: "Pea-sized amount after serum", targetsProblems: ["hydration"], duration: "Daily" },
+      { step: 4, timeOfDay: "Morning", category: "Sunscreen", productName: "RE'EQUIL Oxybenzone Free SPF 50 PA+++", brand: "RE'EQUIL", price: "₹595", availableAt: "Nykaa, Amazon", whyThisProduct: "Prevents pigmentation, no white cast", howToUse: "2-finger length, last morning step", targetsProblems: ["UV protection"], duration: "Every morning" },
+      { step: 5, timeOfDay: "Night", category: "Cleanser", productName: "Simple Kind to Skin Moisturising Facial Wash", brand: "Simple", price: "₹349", availableAt: "Nykaa, Flipkart", whyThisProduct: "Gentle evening cleanse", howToUse: "Massage 60 seconds, rinse thoroughly", targetsProblems: ["cleansing"], duration: "Every night" },
+      { step: 6, timeOfDay: "Night", category: "Serum", productName: "Dot & Key Watermelon Hyaluronic Serum", brand: "Dot & Key", price: "₹545", availableAt: "Nykaa", whyThisProduct: "Deep overnight hydration", howToUse: "4-5 drops, press into skin", targetsProblems: ["hydration"], duration: "Every night" },
     ],
     weeklyTreatments: [
-      { day: "Tuesday & Saturday", treatment: "Exfoliation", product: "Mamaearth Ubtan Face Scrub", price: "₹249", instructions: "Use only 1-2 times per week. Massage in circular motion 2 mins. Skip if active breakouts." },
-      { day: "Wednesday", treatment: "Clay Mask", product: "Multani Mitti + Rose Water", price: "₹50", instructions: "Mix 2 tbsp multani mitti with rose water to paste. Apply 15 mins. Rinse with cold water. Excellent for oily skin." },
+      { day: "Tuesday & Saturday", treatment: "Exfoliation", product: "Mamaearth Ubtan Face Scrub", price: "₹249", instructions: "Use 1-2 times per week. Massage circular motion 2 mins." },
+      { day: "Wednesday", treatment: "Clay Mask", product: "Multani Mitti + Rose Water", price: "₹50", instructions: "Mix 2 tbsp multani mitti with rose water. Apply 15 mins. Rinse cold water." },
     ],
     treatmentPlan: {
-      week1: { title: "Foundation Week - Cleanse & Start", morning: ["Salicylic acid face wash", "Niacinamide serum", "Lightweight moisturizer", "SPF 50 sunscreen"], night: ["Gentle cleanser", "Hyaluronic acid serum", "Night moisturizer"], avoid: ["Hot water on face", "Touching face frequently", "Skipping sunscreen"], expectedResult: "Skin feels cleaner, less congested, oiliness reduces by day 5-7" },
-      week2: { title: "Treatment Week - Target Problems", morning: ["Continue full morning routine", "Apply sunscreen generously before going out"], night: ["Add retinol 0.1% serum 2-3 times this week", "Use clay mask on Wednesday"], avoid: ["Popping pimples", "Skipping steps thinking skin looks better"], expectedResult: "New breakouts reduce significantly, slight overall brightening visible" },
-      week3: { title: "Repair Week - Heal & Brighten", morning: ["Full routine consistently", "Exfoliate Tuesday only with gentle scrub"], night: ["Retinol 3 times this week", "Add Vitamin C serum before moisturizer"], avoid: ["Over-exfoliating", "Mixing too many active ingredients at once"], expectedResult: "Dark spots starting to fade, skin texture becomes noticeably smoother" },
-      week4: { title: "Maintenance Week - Protect & Glow", morning: ["Full routine", "Double sunscreen if spending 2+ hours outdoors"], night: ["Full night routine consistently every single day"], avoid: ["Stopping routine thinking skin is cured", "Staying up late - sleep is skincare"], expectedResult: "60-70% visible improvement, glowing clear skin, compliments incoming!" },
+      week1: { title: "Foundation Week", morning: ["Salicylic face wash", "Niacinamide serum", "Moisturizer", "SPF 50"], night: ["Gentle cleanser", "Hyaluronic serum", "Night cream"], avoid: ["Hot water on face", "Touching face", "Skipping sunscreen"], expectedResult: "Skin feels cleaner, oiliness reduces" },
+      week2: { title: "Treatment Week", morning: ["Full morning routine", "Apply sunscreen generously"], night: ["Add retinol 0.1% 2-3 times", "Clay mask Wednesday"], avoid: ["Popping pimples", "Skipping steps"], expectedResult: "New breakouts reduce, slight brightening visible" },
+      week3: { title: "Repair Week", morning: ["Full routine", "Exfoliate Tuesday only"], night: ["Retinol 3 times", "Add Vitamin C serum"], avoid: ["Over-exfoliating", "Mixing too many actives"], expectedResult: "Dark spots fading, texture smoother" },
+      week4: { title: "Maintenance Week", morning: ["Full routine", "Double sunscreen outdoors"], night: ["Full night routine daily"], avoid: ["Stopping routine", "Staying up late"], expectedResult: "60-70% improvement, glowing skin" },
     },
   };
 }
@@ -112,7 +112,7 @@ router.post("/analyze", protect, async (req, res) => {
     const skinScore = calcScore(faceData?.ss);
     console.log(`✅ Score: ${skinScore}, Face++ data: ${faceData ? "yes" : "no"}`);
 
-    // Step 2: Try Groq AI — if it fails, use fallback
+    // Step 2: Gemini AI
     let aiResult = null;
     try {
       const ss = faceData?.ss || {};
@@ -125,15 +125,14 @@ router.post("/analyze", protect, async (req, res) => {
       if (ss.blackheads > 20) problems.push(`blackheads ${ss.blackheads}%`);
       const problemStr = problems.length ? problems.join(", ") : "generally healthy skin";
 
-      console.log("🤖 Calling Groq...");
+      console.log("🤖 Calling Gemini...");
 
       const prompt = `You are a dermatologist AI. Patient scan: age ${faceData?.age || 25}, ${faceData?.gender || "unknown"}, skin problems: ${problemStr}, skin score: ${skinScore}/100.
-Seed:${Math.random()}
 
 Give personalized Indian skincare advice. Use ONLY Indian products from Nykaa/Amazon.
-Return ONLY a JSON object starting with { and ending with }. No markdown. No extra text.
+Return ONLY a JSON object. No markdown. No extra text.
 
-The JSON must have these exact keys:
+Required JSON keys:
 - skinType: string (oily/dry/combination/normal/sensitive)
 - skinTypeSummary: string (2 sentences)
 - overallHealth: string
@@ -146,15 +145,15 @@ The JSON must have these exact keys:
 - ingredientsToAvoid: array of 3 strings
 - dietForSkin: array of 4 strings
 - lifestyleTips: array of 3 strings
-- productPlan: array of 6 objects each with {step, timeOfDay, category, productName, brand, price, availableAt, whyThisProduct, howToUse, targetsProblems, duration}
+- productPlan: array of 6 objects with {step, timeOfDay, category, productName, brand, price, availableAt, whyThisProduct, howToUse, targetsProblems, duration}
 - weeklyTreatments: array of 2 objects with {day, treatment, product, price, instructions}
 - treatmentPlan: object with week1, week2, week3, week4 each having {title, morning, night, avoid, expectedResult}`;
 
-      const text = await callGroq(prompt);
-      aiResult = parseGroqJSON(text);
-      console.log("✅ Groq success, keys:", Object.keys(aiResult).join(", "));
+      const text = await callGemini(prompt);
+      aiResult = parseGeminiJSON(text);
+      console.log("✅ Gemini success, keys:", Object.keys(aiResult).join(", "));
 
-      // Validate critical keys exist — if not, use fallback for missing parts
+      // Validate — use fallback for missing parts
       if (!aiResult.productPlan || aiResult.productPlan.length === 0) {
         console.log("⚠️ productPlan missing, using fallback");
         const fb = getFallback(faceData, skinScore);
@@ -162,13 +161,12 @@ The JSON must have these exact keys:
         aiResult.weeklyTreatments = fb.weeklyTreatments;
         aiResult.treatmentPlan = fb.treatmentPlan;
       }
-      if (!aiResult.treatmentPlan || !aiResult.treatmentPlan.week1) {
+      if (!aiResult.treatmentPlan?.week1) {
         console.log("⚠️ treatmentPlan missing, using fallback");
-        const fb = getFallback(faceData, skinScore);
-        aiResult.treatmentPlan = fb.treatmentPlan;
+        aiResult.treatmentPlan = getFallback(faceData, skinScore).treatmentPlan;
       }
-    } catch (groqErr) {
-      console.error("⚠️ Groq failed, using fallback:", groqErr.message);
+    } catch (geminiErr) {
+      console.error("⚠️ Gemini failed, using fallback:", geminiErr.message);
       aiResult = getFallback(faceData, skinScore);
     }
 

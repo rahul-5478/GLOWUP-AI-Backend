@@ -1,14 +1,12 @@
 const express = require("express");
 const router = express.Router();
 const { protect } = require("../middleware/auth");
-const { callGroq, parseGroqJSON } = require("../config/groq");
+const { callGemini, parseGeminiJSON } = require("../config/gemini");
 const User = require("../models/User");
 
-// Save weekly score
 router.post("/score", protect, async (req, res) => {
   try {
     const { skinScore, fitnessScore, fashionScore, notes } = req.body;
-
     const overallScore = Math.round((skinScore + fitnessScore + fashionScore) / 3);
 
     const weekData = {
@@ -25,7 +23,6 @@ router.post("/score", protect, async (req, res) => {
       $push: { glowScores: weekData }
     });
 
-    // AI insight generate karo
     const prompt = `User's weekly glow scores:
 Skin: ${skinScore}/100, Fitness: ${fitnessScore}/100, Fashion: ${fashionScore}/100
 Overall: ${overallScore}/100
@@ -49,8 +46,8 @@ Return ONLY JSON:
   "badges": ["badge1 if earned", "badge2 if earned"]
 }`;
 
-    const text = await callGroq(prompt, { skinScore, fitnessScore, fashionScore });
-    const insight = parseGroqJSON(text);
+    const text = await callGemini(prompt, { skinScore, fitnessScore, fashionScore });
+    const insight = parseGeminiJSON(text);
 
     res.json({ success: true, weekData: { ...weekData, ...insight } });
   } catch (err) {
@@ -59,18 +56,16 @@ Return ONLY JSON:
   }
 });
 
-// Get score history
 router.get("/history", protect, async (req, res) => {
   try {
     const user = await User.findById(req.user._id).select("glowScores");
-    const scores = (user.glowScores || []).slice(-12).reverse(); // Last 12 weeks
+    const scores = (user.glowScores || []).slice(-12).reverse();
     res.json({ success: true, scores });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// Get latest score
 router.get("/latest", protect, async (req, res) => {
   try {
     const user = await User.findById(req.user._id).select("glowScores");

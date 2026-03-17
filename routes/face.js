@@ -1,12 +1,13 @@
 const express = require("express");
 const router = express.Router();
 const { protect } = require("../middleware/auth");
-const { callGroq, parseGroqJSON } = require("../config/groq");
+const { callGemini, parseGeminiJSON } = require("../config/gemini"); // ✅ Gemini
 const User = require("../models/User");
 const axios = require("axios");
 const FormData = require("form-data");
+const { attachImagesToHairstyles } = require("../utils/imageSearch");
 
-// ─── Face++ API (backup — skin data ke liye) ──────────────────────────────────
+// ─── Face++ API ───────────────────────────────────────────────────────────────
 const analyzeFaceWithFacePlusPlus = async (imageBase64) => {
   try {
     const form = new FormData();
@@ -44,12 +45,11 @@ const analyzeFaceWithFacePlusPlus = async (imageBase64) => {
       faceRectangle: faces[0].face_rectangle,
     };
   } catch (err) {
-    console.error("Face++ error (non-critical):", err.response?.data || err.message);
-    return null; // ✅ null return karo — backup hai, crash nahi hoga
+    console.error("Face++ error:", err.response?.data || err.message);
+    return null;
   }
 };
 
-// ─── Face Shape from rectangle (fallback) ────────────────────────────────────
 const getFaceShapeFromRect = (rect) => {
   if (!rect) return "oval";
   const ratio = rect.width / rect.height;
@@ -59,7 +59,6 @@ const getFaceShapeFromRect = (rect) => {
   return "oblong";
 };
 
-// ─── Skin Problems ────────────────────────────────────────────────────────────
 const detectSkinProblems = (skinStatus) => {
   const problems = [];
   if (skinStatus.acne > 20) problems.push({ name: "Acne", severity: skinStatus.acne > 50 ? "High" : "Moderate", score: Math.round(skinStatus.acne) });
@@ -77,134 +76,111 @@ router.post("/analyze", protect, async (req, res) => {
     const { imageBase64, mediapipe } = req.body;
     if (!imageBase64) return res.status(400).json({ error: "Image required." });
 
-    // ── User profile se data lo ──
     const user = await User.findById(req.user._id).select("profile");
     const userProfile = user?.profile || {};
 
-    // ── Step 1: MediaPipe data (frontend se aaya) ──
+    // MediaPipe data from frontend
     const mediapipeFaceShape = mediapipe?.faceShape || null;
     const mediapipeJawline = mediapipe?.jawlineType || null;
-
     console.log("📐 MediaPipe face shape:", mediapipeFaceShape || "not available");
 
-    // ── Step 2: Face++ (backup — skin data ke liye) ──
-    console.log("🔍 Calling Face++ for skin data...");
+    // Face++ for skin data
+    console.log("🔍 Calling Face++...");
     const faceData = await analyzeFaceWithFacePlusPlus(imageBase64);
-    console.log("✅ Face++ result:", faceData ? "success" : "failed (using defaults)");
+    console.log("✅ Face++:", faceData ? "success" : "failed");
 
-    // ── Step 3: Face shape priority ──
-    // 1st: MediaPipe (most accurate — 468 landmarks)
-    // 2nd: Face++ rectangle ratio (fallback)
-    // 3rd: "oval" (default)
-    const faceShape = mediapipeFaceShape
-      || getFaceShapeFromRect(faceData?.faceRectangle)
-      || "oval";
-
+    // Face shape priority: MediaPipe > Face++ > default
+    const faceShape = mediapipeFaceShape || getFaceShapeFromRect(faceData?.faceRectangle) || "oval";
     const jawlineType = mediapipeJawline || "defined";
 
-    // ── Step 4: User profile priority for gender/age ──
     const gender = userProfile.gender
       ? userProfile.gender.charAt(0).toUpperCase() + userProfile.gender.slice(1)
       : faceData?.gender || "Unknown";
-
     const age = userProfile.age || faceData?.age || 25;
     const skinType = userProfile.skinType || "normal";
     const userGoal = userProfile.goal || "maintenance";
     const height = userProfile.height || null;
     const weight = userProfile.weight || null;
-    const bmi = height && weight
-      ? (weight / ((height / 100) ** 2)).toFixed(1)
-      : null;
+    const bmi = height && weight ? (weight / ((height / 100) ** 2)).toFixed(1) : null;
 
-    // ── Step 5: Skin status ──
     const skinStatus = faceData?.skinStatus || {
       health: 70, acne: 10, dark_circle: 10,
       stain: 10, pore: 20, wrinkle: 10, saturation: 50,
     };
     const skinScore = Math.round(skinStatus.health);
     const skinProblems = detectSkinProblems(skinStatus);
-
     const problemsList = skinProblems.length > 0
       ? skinProblems.map(p => `${p.name} (severity: ${p.severity}, score: ${p.score})`).join(", ")
       : "None detected";
 
-    // ── Step 6: Groq prompt ──
     const analysisSource = mediapipeFaceShape
-      ? "MediaPipe AI (468 facial landmarks — highly accurate)"
-      : "Face++ API (face rectangle ratio)";
+      ? "MediaPipe AI (468 facial landmarks)"
+      : "Face++ API";
 
-    const prompt = `You are GlowUp AI's expert beauty advisor. Return ONLY valid JSON. No markdown.
+    const prompt = `You are GlowUp AI expert beauty advisor. Return ONLY valid JSON. No markdown. No extra text.
 
-FACE ANALYSIS SOURCE: ${analysisSource}
+ANALYSIS SOURCE: ${analysisSource}
+GENDER: ${gender} | AGE: ${age} | SKIN TYPE: ${skinType} | GOAL: ${userGoal}
+HEIGHT: ${height || "unknown"} cm | WEIGHT: ${weight || "unknown"} kg | BMI: ${bmi || "unknown"}
+FACE SHAPE: ${faceShape} | JAWLINE: ${jawlineType}
+SKIN SCORE: ${skinScore}/100
+SKIN PROBLEMS: ${problemsList}
 
-USER PROFILE (100% accurate — from registration):
-- Gender: ${gender}
-- Age: ${age} years
-- Height: ${height ? height + " cm" : "unknown"}
-- Weight: ${weight ? weight + " kg" : "unknown"}
-- BMI: ${bmi || "unknown"}
-- Skin Type: ${skinType}
-- Goal: ${userGoal}
-
-FACE DATA:
-- Face Shape: ${faceShape} (detected by ${mediapipeFaceShape ? "MediaPipe" : "Face++"})
-- Jawline: ${jawlineType}
-- Skin Score: ${skinScore}/100
-- Acne: ${skinStatus.acne}, Dark Circles: ${skinStatus.dark_circle}
-- Pores: ${skinStatus.pore}, Wrinkles: ${skinStatus.wrinkle}
-- Skin Problems: ${problemsList}
-
-Return this JSON:
+Return this exact JSON structure:
 {
   "faceShape": "${faceShape}",
-  "faceShapeDetails": "2 specific sentences about ${faceShape} face for ${gender} age ${age}",
+  "faceShapeDetails": "2 sentences about ${faceShape} face shape for ${gender}",
   "skinTone": "fair/wheatish/medium/dusky/deep",
-  "skinToneHex": "#hex",
+  "skinToneHex": "#hexcode",
   "jawlineType": "${jawlineType}",
   "skinScore": ${skinScore},
-  "skinGrade": "A/B/C/D/F",
+  "skinGrade": "A/B/C/D",
   "detectedProblems": [
-    {"name": "", "severity": "High/Moderate/Low", "score": 0, "description": "", "cause": ""}
+    {"name": "problem name", "severity": "High/Moderate/Low", "score": 0, "description": "description", "cause": "cause"}
   ],
   "topHairstyles": [
-    {"name": "${gender}-specific style for ${faceShape}", "reason": "", "maintenance": "Low/Medium/High"},
-    {"name": "", "reason": "", "maintenance": "Low/Medium/High"},
-    {"name": "", "reason": "", "maintenance": "Low/Medium/High"}
+    {"name": "hairstyle name for ${faceShape} ${gender}", "reason": "why it suits ${faceShape} face", "maintenance": "Low/Medium/High"},
+    {"name": "", "reason": "", "maintenance": ""},
+    {"name": "", "reason": "", "maintenance": ""},
+    {"name": "", "reason": "", "maintenance": ""},
+    {"name": "", "reason": "", "maintenance": ""}
   ],
   "skincareProducts": [
-    {"step":1,"type":"Cleanser","productName":"","brand":"","price":"₹","why":"for ${skinType} skin","howToUse":"","availableAt":"Nykaa"},
-    {"step":2,"type":"Serum","productName":"","brand":"","price":"₹","why":"","howToUse":"","availableAt":"Amazon"},
-    {"step":3,"type":"Moisturizer","productName":"","brand":"","price":"₹","why":"","howToUse":"","availableAt":"Nykaa"},
-    {"step":4,"type":"Sunscreen","productName":"","brand":"","price":"₹","why":"","howToUse":"","availableAt":"Amazon"},
-    {"step":5,"type":"Night Treatment","productName":"","brand":"","price":"₹","why":"","howToUse":"","availableAt":"Nykaa"}
+    {"step": 1, "type": "Cleanser", "productName": "", "brand": "Indian brand", "price": "₹XXX", "why": "", "howToUse": "", "availableAt": "Nykaa/Amazon"},
+    {"step": 2, "type": "Serum", "productName": "", "brand": "Indian brand", "price": "₹XXX", "why": "", "howToUse": "", "availableAt": ""},
+    {"step": 3, "type": "Moisturizer", "productName": "", "brand": "Indian brand", "price": "₹XXX", "why": "", "howToUse": "", "availableAt": ""},
+    {"step": 4, "type": "Sunscreen", "productName": "", "brand": "Indian brand", "price": "₹XXX", "why": "", "howToUse": "", "availableAt": ""},
+    {"step": 5, "type": "Night Treatment", "productName": "", "brand": "Indian brand", "price": "₹XXX", "why": "", "howToUse": "", "availableAt": ""}
   ],
   "treatmentPlan": {
     "duration": "4 weeks",
-    "goal": "",
-    "weeklyFocus": ["", "", "", ""],
-    "morningRoutine": ["", "", "", ""],
-    "nightRoutine": ["", "", ""],
-    "doNot": ["", "", ""]
+    "goal": "goal based on problems",
+    "weeklyFocus": ["week1 focus", "week2 focus", "week3 focus", "week4 focus"],
+    "morningRoutine": ["step1", "step2", "step3", "step4"],
+    "nightRoutine": ["step1", "step2", "step3"],
+    "doNot": ["avoid1", "avoid2", "avoid3"]
   },
-  "dietForSkin": ["", "", "", "", ""],
-  "lifestyleTips": ["", "", "", ""],
-  "grooming": ["specific for ${gender}", "", ""],
-  "colorRecommendations": ["", "", ""],
-  "stylesAvoid": ["", ""],
+  "dietForSkin": ["tip1", "tip2", "tip3", "tip4", "tip5"],
+  "lifestyleTips": ["tip1", "tip2", "tip3", "tip4"],
+  "grooming": ["tip1 for ${gender}", "tip2", "tip3"],
+  "colorRecommendations": ["color1", "color2", "color3"],
+  "stylesAvoid": ["style1", "style2"],
   "confidence": ${mediapipeFaceShape ? 97 : 85},
   "nextScanIn": "2 weeks",
   "analysisSource": "${analysisSource}"
 }`;
 
-    console.log("🤖 Calling Groq...");
-    const text = await callGroq(prompt, { faceShape, gender, age, skinScore, skinType });
-    const result = parseGroqJSON(text);
+    // ── Call Gemini ──
+    console.log("🤖 Calling Gemini...");
+    const text = await callGemini(prompt, { faceShape, gender, age, skinScore, skinType });
+    const result = parseGeminiJSON(text);
+    console.log("✅ Gemini success, keys:", Object.keys(result).join(", "));
 
     if (!result || typeof result !== "object") {
-      throw new Error("AI returned invalid structure");
+      throw new Error("Gemini returned invalid structure");
     }
 
-    // ── Override with accurate data ──
+    // Override with accurate data
     result.faceShape = faceShape;
     result.jawlineType = jawlineType;
     result.detectedAge = age;
@@ -212,18 +188,22 @@ Return this JSON:
     result.skinScore = skinScore;
     result.rawSkinStatus = skinStatus;
     result.userProfile = { age, gender, height, weight, bmi, skinType, goal: userGoal };
-
-    // ✅ Analysis source track karo
     result.analyzedWith = mediapipeFaceShape
-      ? "MediaPipe + Face++ + Groq AI"
-      : "Face++ + Groq AI";
+      ? "MediaPipe + Face++ + Gemini AI"
+      : "Face++ + Gemini AI";
 
-    // Merge skin problems
     if (result.detectedProblems && skinProblems.length > 0) {
       result.detectedProblems = result.detectedProblems.map((p, i) => ({
         ...skinProblems[i],
         ...p,
       }));
+    }
+
+    // Attach Pexels hairstyle images
+    if (result.topHairstyles?.length > 0) {
+      console.log("🖼️ Fetching hairstyle images...");
+      result.topHairstyles = await attachImagesToHairstyles(result.topHairstyles, gender);
+      console.log("✅ Hairstyle images attached");
     }
 
     await User.findByIdAndUpdate(req.user._id, {
@@ -233,8 +213,7 @@ Return this JSON:
     res.json({ success: true, result });
 
   } catch (err) {
-    console.error("=== FACE ANALYSIS ERROR ===");
-    console.error("Message:", err.message);
+    console.error("=== FACE ANALYSIS ERROR ===", err.message);
     res.status(500).json({
       error: "Face analysis failed. Please try again.",
       detail: process.env.NODE_ENV === "development" ? err.message : undefined,
@@ -246,10 +225,7 @@ Return this JSON:
 router.get("/history", protect, async (req, res) => {
   try {
     const user = await User.findById(req.user._id).select("analyses");
-    const faceHistory = user.analyses
-      .filter(a => a.type === "face")
-      .reverse()
-      .slice(0, 10);
+    const faceHistory = user.analyses.filter(a => a.type === "face").reverse().slice(0, 10);
     res.json({ history: faceHistory });
   } catch (err) {
     res.status(500).json({ error: err.message });
