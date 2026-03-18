@@ -1,43 +1,48 @@
-const { GoogleGenerativeAI } = require("@google/generative-ai");
+const axios = require("axios");
 
-const genai = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent";
 
 const callGemini = async (prompt, userContext = {}) => {
   const uniqueId = Math.random().toString(36).substring(7);
-  const timestamp = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+  const timestamp = new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
 
   const systemContent = `You are GlowUp AI - a personalized beauty and fitness assistant.
 Time: ${timestamp} | Session: ${uniqueId}
 Context: ${JSON.stringify(userContext)}
 Rules: Give UNIQUE recommendations every time. Consider Indian lifestyle. Return ONLY valid JSON when asked. No markdown. No extra text before or after JSON.`;
 
+  const fullPrompt = systemContent + "\n\n" + String(prompt);
+
   try {
-    const model = genai.getGenerativeModel({
-      model: "gemini-2.0-flash",
-      systemInstruction: systemContent,
-      generationConfig: {
-        maxOutputTokens: 8000,
-        temperature: 0.7,
-        topP: 0.9,
+    const response = await axios.post(
+      `${GEMINI_API_URL}?key=${process.env.GEMINI_API_KEY}`,
+      {
+        contents: [{ parts: [{ text: fullPrompt }] }],
+        generationConfig: {
+          temperature: 0.7,
+          topP: 0.9,
+          maxOutputTokens: 8000,
+        },
       },
-    });
+      {
+        headers: { "Content-Type": "application/json" },
+        timeout: 30000,
+      }
+    );
 
-    const result = await model.generateContent(String(prompt));
-    const text = result.response.text();
-
+    const text = response.data.candidates?.[0]?.content?.parts?.[0]?.text || "";
     console.log("✅ Gemini OK, length:", text.length);
     console.log("📝 First 200 chars:", text.substring(0, 200));
     return text;
 
   } catch (err) {
-    console.error("❌ Gemini error:", err.message);
+    console.error("❌ Gemini error:", err.response?.data || err.message);
     throw err;
   }
 };
 
 const parseGeminiJSON = (text) => {
   let clean = text.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "").trim();
-
   try { return JSON.parse(clean); } catch (_) {}
 
   let depth = 0, start = -1, end = -1;
@@ -47,10 +52,7 @@ const parseGeminiJSON = (text) => {
       depth++;
     } else if (clean[i] === "}") {
       depth--;
-      if (depth === 0 && start !== -1) {
-        end = i;
-        break;
-      }
+      if (depth === 0 && start !== -1) { end = i; break; }
     }
   }
 
@@ -59,7 +61,7 @@ const parseGeminiJSON = (text) => {
   }
 
   console.error("❌ JSON parse failed:", clean.substring(0, 400));
-  throw new Error("Invalid JSON from AI");
+  throw new Error("Invalid JSON from Gemini");
 };
 
 module.exports = { callGemini, parseGeminiJSON };
