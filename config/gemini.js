@@ -1,42 +1,44 @@
 const axios = require("axios");
 
-const GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent";
+const OPENAI_API_URL = "https://api.openai.com/v1/chat/completions";
 
 const callGemini = async (prompt, userContext = {}) => {
   const uniqueId = Math.random().toString(36).substring(7);
   const timestamp = new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
 
-  const systemContent = `You are GlowUp AI - a personalized beauty and fitness assistant.
+  const systemMessage = `You are GlowUp AI - a personalized beauty and fitness assistant.
 Time: ${timestamp} | Session: ${uniqueId}
 Context: ${JSON.stringify(userContext)}
 Rules: Give UNIQUE recommendations every time. Consider Indian lifestyle. Return ONLY valid JSON when asked. No markdown. No extra text before or after JSON.`;
 
-  const fullPrompt = systemContent + "\n\n" + String(prompt);
-
   try {
     const response = await axios.post(
-      `${GEMINI_API_URL}?key=${process.env.GEMINI_API_KEY}`,
+      OPENAI_API_URL,
       {
-        contents: [{ parts: [{ text: fullPrompt }] }],
-        generationConfig: {
-          temperature: 0.7,
-          topP: 0.9,
-          maxOutputTokens: 8000,
-        },
+        model: "gpt-4o-mini",
+        messages: [
+          { role: "system", content: systemMessage },
+          { role: "user", content: String(prompt) },
+        ],
+        temperature: 0.7,
+        max_tokens: 2000,
       },
       {
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+        },
         timeout: 30000,
       }
     );
 
-    const text = response.data.candidates?.[0]?.content?.parts?.[0]?.text || "";
-    console.log("✅ Gemini OK, length:", text.length);
+    const text = response.data.choices?.[0]?.message?.content || "";
+    console.log("✅ OpenAI OK, length:", text.length);
     console.log("📝 First 200 chars:", text.substring(0, 200));
     return text;
 
   } catch (err) {
-    console.error("❌ Gemini error:", err.response?.data || err.message);
+    console.error("❌ OpenAI error:", err.response?.data || err.message);
     throw err;
   }
 };
@@ -61,7 +63,7 @@ const parseGeminiJSON = (text) => {
   }
 
   console.error("❌ JSON parse failed:", clean.substring(0, 400));
-  throw new Error("Invalid JSON from Gemini");
+  throw new Error("Invalid JSON from OpenAI");
 };
 
 module.exports = { callGemini, parseGeminiJSON };
