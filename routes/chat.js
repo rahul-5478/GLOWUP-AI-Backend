@@ -1,89 +1,68 @@
 const express = require("express");
 const router = express.Router();
-const jwt = require("jsonwebtoken");
-const User = require("../models/User");
 const { protect } = require("../middleware/auth");
+const { callGemini } = require("../config/gemini");
+const User = require("../models/User");
 
-const generateToken = (id) =>
-  jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: "7d" });
-
-// ─── Register ────────────────────────────────────────────────
-router.post("/register", async (req, res) => {
+// ─── POST /api/chat/message ───────────────────────────────────────────────────
+router.post("/message", protect, async (req, res) => {
   try {
-    const { name, email, password } = req.body;
+    const { message, history = [], context = {} } = req.body;
 
-    if (!name || !email || !password)
-      return res.status(400).json({ error: "Name, email and password are required." });
+    if (!message || !message.trim()) {
+      return res.status(400).json({ error: "Message is required." });
+    }
 
-    if (password.length < 6)
-      return res.status(400).json({ error: "Password must be at least 6 characters." });
+    const conversationHistory = history
+      .slice(-10)
+      .map((m) => `${m.role === "user" ? "User" : "Assistant"}: ${m.content}`)
+      .join("\n");
 
-    const existing = await User.findOne({ email: email.toLowerCase() });
-    if (existing)
-      return res.status(400).json({ error: "Email already registered." });
+    const prompt = `You are GlowUp AI — a friendly expert beauty, fitness, and style assistant for Indian users.
 
-    const user = await User.create({
-      name,
-      email: email.toLowerCase(),
-      password,
-    });
+${conversationHistory ? `Previous conversation:\n${conversationHistory}\n` : ""}
+User: ${message}
 
-    res.status(201).json({
-      success: true,
-      token: generateToken(user._id),
-      user: {
-        id: user._id,
-        name: user.name,
-        email: user.email,
-      },
-    });
+Reply helpfully and conversationally. Keep response under 200 words unless asked for detail.
+For product recommendations, prefer Indian brands available on Nykaa/Amazon.
+Return ONLY plain text — no JSON, no markdown headers.`;
+
+    const text = await callGemini(prompt, { message });
+
+    // Non-fatal DB save
+    try {
+      await User.findByIdAndUpdate(req.user._id, {
+        $push: {
+          analyses: {
+            type: "chat",
+            result: { userMessage: message, aiReply: text, timestamp: new Date() },
+          },
+        },
+      });
+    } catch (dbErr) {
+      console.log("Chat DB save non-fatal:", dbErr.message);
+    }
+
+    return res.json({ success: true, reply: text });
+
   } catch (err) {
-    console.error("Register error:", err.message);
-    res.status(500).json({ error: "Registration failed. Please try again." });
+    console.error("Chat route error:", err.message);
+    return res.status(500).json({ error: "Chat failed. Please try again." });
   }
 });
 
-// ─── Login ───────────────────────────────────────────────────
-router.post("/login", async (req, res) => {
+// ─── GET /api/chat/history ────────────────────────────────────────────────────
+router.get("/history", protect, async (req, res) => {
   try {
-    const { email, password } = req.body;
-
-    if (!email || !password)
-      return res.status(400).json({ error: "Email and password are required." });
-
-    const user = await User.findOne({ email: email.toLowerCase() }).select("+password");
-    if (!user)
-      return res.status(401).json({ error: "Invalid email or password." });
-
-    const isMatch = await user.comparePassword(password);
-    if (!isMatch)
-      return res.status(401).json({ error: "Invalid email or password." });
-
-    res.json({
-      success: true,
-      token: generateToken(user._id),
-      user: {
-        id: user._id,
-        name: user.name,
-        email: user.email,
-      },
-    });
+    const user = await User.findById(req.user._id).select("analyses");
+    const chatHistory = (user.analyses || [])
+      .filter((a) => a.type === "chat")
+      .reverse()
+      .slice(0, 50);
+    return res.json({ success: true, history: chatHistory });
   } catch (err) {
-    console.error("Login error:", err.message);
-    res.status(500).json({ error: "Login failed. Please try again." });
+    return res.status(500).json({ error: err.message });
   }
-});
-
-// ─── Get current user ────────────────────────────────────────
-router.get("/me", protect, async (req, res) => {
-  res.json({
-    success: true,
-    user: {
-      id: req.user._id,
-      name: req.user.name,
-      email: req.user.email,
-    },
-  });
 });
 
 module.exports = router;
