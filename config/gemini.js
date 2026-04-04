@@ -1,31 +1,27 @@
-const { GoogleGenerativeAI } = require("@google/generative-ai");
-
-const genai = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+const axios = require("axios");
 
 const callGemini = async (prompt, userContext = {}) => {
   const uniqueId = Math.random().toString(36).substring(7);
   const timestamp = new Date().toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
-
-  const systemInstruction = `You are GlowUp AI - a personalized beauty and fitness assistant.
-Time: ${timestamp} | Session: ${uniqueId}
-Context: ${JSON.stringify(userContext)}
-Rules: Give UNIQUE recommendations every time. Consider Indian lifestyle. Return ONLY valid JSON when asked. No markdown. No extra text before or after JSON.`;
-
+  const systemMessage = "You are GlowUp AI - a personalized beauty and fitness assistant. Time: " + timestamp + " | Session: " + uniqueId + ". Give UNIQUE recommendations. Consider Indian lifestyle. Return ONLY valid JSON when asked. No markdown.";
   try {
-    const model = genai.getGenerativeModel({
-      model: "gemini-2.0-flash",
-      systemInstruction,
-      generationConfig: { maxOutputTokens: 2000, temperature: 0.7 },
+    const response = await axios.post("https://api.x.ai/v1/chat/completions", {
+      model: "grok-beta",
+      messages: [
+        { role: "system", content: systemMessage },
+        { role: "user", content: String(prompt) }
+      ],
+      temperature: 0.7,
+      max_tokens: 2000,
+    }, {
+      headers: { "Content-Type": "application/json", Authorization: "Bearer " + process.env.GROK_API_KEY },
+      timeout: 30000,
     });
-
-    const result = await model.generateContent(prompt);
-    const text = result.response.text();
-    console.log("✅ Gemini OK, length:", text.length);
-    console.log("📝 First 200 chars:", text.substring(0, 200));
+    const text = response.data.choices?.[0]?.message?.content || "";
+    console.log("? Grok OK, length:", text.length);
     return text;
-
   } catch (err) {
-    console.error("❌ Gemini error:", err.message);
+    console.error("? Grok error:", err.response?.data || err.message);
     throw err;
   }
 };
@@ -33,24 +29,13 @@ Rules: Give UNIQUE recommendations every time. Consider Indian lifestyle. Return
 const parseGeminiJSON = (text) => {
   let clean = text.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/, "").trim();
   try { return JSON.parse(clean); } catch (_) {}
-
   let depth = 0, start = -1, end = -1;
   for (let i = 0; i < clean.length; i++) {
-    if (clean[i] === "{") {
-      if (start === -1) start = i;
-      depth++;
-    } else if (clean[i] === "}") {
-      depth--;
-      if (depth === 0 && start !== -1) { end = i; break; }
-    }
+    if (clean[i] === "{") { if (start === -1) start = i; depth++; }
+    else if (clean[i] === "}") { depth--; if (depth === 0 && start !== -1) { end = i; break; } }
   }
-
-  if (start !== -1 && end !== -1) {
-    try { return JSON.parse(clean.slice(start, end + 1)); } catch (_) {}
-  }
-
-  console.error("❌ JSON parse failed:", clean.substring(0, 400));
-  throw new Error("Invalid JSON from Gemini");
+  if (start !== -1 && end !== -1) { try { return JSON.parse(clean.slice(start, end + 1)); } catch (_) {} }
+  throw new Error("Invalid JSON from Grok");
 };
 
 module.exports = { callGemini, parseGeminiJSON };
