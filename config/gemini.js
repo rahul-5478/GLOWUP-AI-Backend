@@ -5,7 +5,7 @@ const callGemini = async (prompt, userContext = {}) => {
     const response = await axios.post(
       "https://api.x.ai/v1/chat/completions",
       {
-        model: "grok-beta",
+        model: "grok-3-mini",
         messages: [
           { role: "system", content: "You are GlowUp AI - a beauty and fitness assistant for Indian users. Return ONLY valid JSON when asked. No markdown." },
           { role: "user", content: String(prompt) }
